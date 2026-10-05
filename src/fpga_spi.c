@@ -529,3 +529,45 @@ void fpga_write_config(uint8_t group, uint8_t index, uint8_t value, uint8_t invm
   FPGA_TX_BYTE(0x00); // flop reset
   FPGA_DESELECT();
 }
+
+/* SuperRT core (verilog/sd2snes_superrt) */
+uint8_t fpga_srt_status() {
+  uint8_t data;
+  FPGA_SELECT();
+  FPGA_TX_BYTE(FPGA_CMD_SRT_STATUS);
+  data = FPGA_RX_BYTE();
+  FPGA_DESELECT();
+  return data;
+}
+
+void fpga_srt_ack() {
+  FPGA_SELECT();
+  FPGA_TX_BYTE(FPGA_CMD_SRT_ACK);
+  FPGA_DESELECT();
+}
+
+void fpga_srt_done() {
+  FPGA_SELECT();
+  FPGA_TX_BYTE(FPGA_CMD_SRT_DONE);
+  FPGA_DESELECT();
+}
+
+/* stream the render parameters (FPGA_CMD_SRT_PARAMS) or the command buffer
+   (FPGA_CMD_SRT_CMDBUF) */
+void fpga_srt_read(uint8_t cmd, uint8_t *buf, uint16_t len) {
+  FPGA_SELECT();
+  FPGA_TX_BYTE(cmd);
+  while(len--) {
+    *buf++ = FPGA_RX_BYTE();
+  }
+  FPGA_DESELECT();
+}
+
+/* hardware engine: number of pixels waiting in the FIFO; optionally the
+   engine's cycle count for the current (or last) frame */
+uint16_t fpga_srt_info(uint32_t *cycles) {
+  uint8_t b[7];
+  fpga_srt_read(FPGA_CMD_SRT_INFO, b, cycles ? 7 : 2);
+  if(cycles) *cycles = ((uint32_t)b[3] << 24) | ((uint32_t)b[4] << 16) | ((uint32_t)b[5] << 8) | b[6];
+  return (uint16_t)(((b[0] & 0x0f) << 8) | b[1]);
+}

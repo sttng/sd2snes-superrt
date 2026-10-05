@@ -81,6 +81,9 @@ SRC += printf.c fileops.c fpga.c fpga_spi.c snes.c smc.c
 SRC += memory.c filetypes.c faulthandler.c sort.c crc32.c cic.c
 SRC += cli.c ymodem.c rle.c msu1.c crc16.c sysinfo.c
 SRC += cfg.c cheat.c yaml.c savestate.c sgb.c hwinfo.c
+ifeq ($(CONFIG_MK3),y)
+SRC += superrt.c superrt_core.c srt_render.c
+endif
 
 SRC += usbdesc.c usbcore.c usbuser.c cdcuser.c usbinterface.c
 

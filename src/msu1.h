@@ -39,6 +39,10 @@
 
 int msu1_check(uint8_t*);
 int msu1_loop(void);
+/* for main loops that serve MSU-1 next to other work (superrt.c) */
+void msu1_start(void);
+int msu1_service(void);
+int msu1_stop(int res);
 
 uint8_t msu_readbyte(uint16_t addr);
 uint16_t msu_readshort(uint16_t addr);

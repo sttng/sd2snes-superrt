@@ -78,6 +78,7 @@ void smc_id(snes_romprops_t* props, uint32_t file_offset) {
   props->has_sa1 = 0;
   props->has_sdd1 = 0;
   props->has_combo = 0;
+  props->has_superrt = 0;
   props->srambase = 0;
   props->sramsize_bytes = 0;
   props->fpga_features = 0;
@@ -133,6 +134,13 @@ void smc_id(snes_romprops_t* props, uint32_t file_offset) {
   switch(header->map & 0xef) {
     case 0x20: /* LoROM */
       props->mapper_id = 1;
+#ifdef CONFIG_MK3
+      /* SuperRT ray tracing chip (homebrew, no chip ID: detect by title) */
+      if (!memcmp(header->name, "SUPERRT", 7)) {
+        props->has_superrt = 1;
+        props->fpga_conf = FPGA_SUPERRT;
+      } else
+#endif
       /* Cx4 LoROM */
       if (header->map == 0x20 && ext_coprocessor && header->carttype2 == 0x10) {
         props->has_cx4 = 1;

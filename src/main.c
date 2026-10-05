@@ -24,6 +24,7 @@
 #include "crc.h"
 #include "smc.h"
 #include "msu1.h"
+#include "superrt.h"
 #include "rtc.h"
 #include "sysinfo.h"
 #include "cfg.h"
@@ -468,6 +469,14 @@ int main(void) {
 
     /* clear SNES cmd */
     snes_set_mcu_cmd(0);
+
+#ifdef CONFIG_MK3
+    if(romprops.has_superrt) {
+      while(!superrt_loop());
+      prepare_reset();
+      continue;
+    }
+#endif
 
     if(romprops.has_msu1) {
       while(!msu1_loop());
