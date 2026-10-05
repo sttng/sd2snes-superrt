@@ -19,8 +19,8 @@ MK3MENU := m3nu.bin
 FPGAPATH := verilog
 MK2EXT := bit
 MK3EXT := bi3
-MK2CORES := base cx4 gsu obc1 sdd1 sa1 dsp sgb sgb_msu
-MK3CORES := base cx4 gsu obc1 sdd1 sa1 dsp sgb
+MK2CORES := #base cx4 gsu obc1 sdd1 sa1 dsp sgb sgb_msu
+MK3CORES := base superrt #dsp bootleg #st0011 st0018 col20 #MK3CORES := base cx4 gsu obc1 sdd1 sa1 dsp sgb
 
 MK2FPGA := $(foreach C,$(MK2CORES),$(FPGAPATH)/sd2snes_$C/fpga_$C.$(MK2EXT))
 MK3FPGA := $(foreach C,$(MK3CORES),$(FPGAPATH)/sd2snes_$C/fpga_$C.$(MK3EXT))
@@ -89,9 +89,46 @@ endif
 	cd $(TARGETPARENT) && zip -r sd2snes_firmware_v$(CONFIG_VERSION).zip sd2snes
 
 bsxpage:
+	$(MAKE) -C $(UTILS)
+	mkdir -p bin
 	cd bin && ../$(UTILS)/genbsxpage
 
 version:
 	@echo Version: $(CONFIG_VERSION)
 
-.PHONY: version release bsxpage $(MK2FPGA) $(MK3FPGA) $(MK2MINI) $(MK3MINI) $(MK2CLEAN) $(MK3CLEAN)
+# ---- ludufre PT-BR fork: mk3-only targets (no mk2 = no Xilinx ISE) ----
+# `mk3`     : full from-scratch mk3 release (FPGA cores via Quartus [Make-cached]
+#             + firmware mk3/stm32 + menu + bsxpage), assembled + zipped. Nothing
+#             from the official zip. Needs QUARTUS_ROOTDIR in the env (prepare.sh).
+# `mk3-fw`  : just menu + firmware (mk3 + stm32) — fast, for device-update
+#             iteration; skips the big FPGA cores (only needs the mini cfgware).
+mk3: version $(MK3FPGA) $(MK3MINI) bsxpage mk3-fw
+	rm -rf $(TARGETPARENT)
+	mkdir -p $(TARGET)
+	cp bin/*.bin $(TARGET)
+	cp $(README) $(TARGET)
+	cp $(MK3FPGA) $(TARGET)
+	cp $(MK3MCUPATH)/$(MK3MCU) $(TARGET)
+	cp $(STMMCUPATH)/$(STMMCU) $(TARGET)
+	cp $(MENUPATH)/$(MK3MENU) $(TARGET)
+	cp $(MENUPATH)/$(MK2MENU) $(TARGET)
+	cp $(SAVESTATEPATH)/$(SAVESTATEFILES) $(TARGET)
+	cd $(TARGETPARENT) && zip -r sd2snes_firmware_v$(CONFIG_VERSION).zip sd2snes
+
+mk3-fw: $(MK3MINI)
+	rm -rf $(TARGETPARENT)
+	mkdir -p $(TARGET)
+	$(MAKE) -C snes
+	$(MAKE) -C src CONFIG=config-mk3
+	$(MAKE) -C src CONFIG=config-mk3-stm32
+	cp $(MK3MCUPATH)/$(MK3MCU) $(TARGET)
+	cp $(STMMCUPATH)/$(STMMCU) $(TARGET)
+
+mk2-fw:
+	rm -rf $(TARGETPARENT)
+	mkdir -p $(TARGET)
+	$(MAKE) -C snes
+	$(MAKE) -C src CONFIG=config-mk2
+	cp $(MK2MCUPATH)/$(MK2MCU) $(TARGET)
+
+.PHONY: version release bsxpage mk3 mk3-fw $(MK2FPGA) $(MK3FPGA) $(MK2MINI) $(MK3MINI) $(MK2CLEAN) $(MK3CLEAN)
