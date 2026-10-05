@@ -12,7 +12,7 @@ HOST = LINUX
 # ===================================================================
 XILINX_HOME = /opt/Xilinx/14.7/ISE_DS
 XILINX_TARGET = lin64
-INTEL_BIN = /opt/intelFPGA/25.1/quartus/bin
+INTEL_BIN = ~/altera_lite/25.1std/quartus/bin
 
 # specify number of concurrent SmartXPlorer runs
 XPLORER_CPUS = 8
