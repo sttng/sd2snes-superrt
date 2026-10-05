@@ -60,7 +60,7 @@ from the same version.
   `rom/SRTTest-sd2snes.patch` adds both to the test ROM.
 * Optional: register `$BEBA` bit 0 selects full resolution (default half).
 * For MSU-1 audio on real hardware the ROM must unmute the S-DSP (the test ROM
-  uploads a tiny SPC700 program); emulators don't model this mute.
+  uploads a tiny SPC700 program).
 
 ## What's where
 
@@ -69,9 +69,7 @@ from the same version.
     src/superrt*.[ch]          firmware: palette mapping, tiles, main loop
     superrt/rom/               test ROM build + patches (sd2snes, resolution, MSU-1)
     superrt/msu/               MSU-1 track tool, diagnostic ROMs
-    superrt/emu/               end-to-end emulator, MSU-1 firmware co-simulation
     superrt/datagen/           palette / start image / descriptor generator
-    superrt/rtlref/            Verilator model of the original RTL
 
 ## Not supported
 
