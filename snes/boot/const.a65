@@ -1,0 +1,2 @@
+.link page $c0
+zero		.word	0

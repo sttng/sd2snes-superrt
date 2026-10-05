@@ -1,0 +1,120 @@
+.link page $c0
+#include "memmap.i65"
+#include "dma.i65"
+
+; NMI - called on VBlank
+NMI_ROUTINE:
+  sep #$20 : .as
+  rep #$10 : .xl
+  lda #$00
+  pha
+  plb
+  lda screen_dma_disable
+  beq do_screen_dma
+  jmp skip_screen_dma
+do_screen_dma:
+  ldx #BG1_TILE_BASE+32*9
+  stx $2116
+  DMA7(#$01, #40*64, #^BG1_TILE_BUF, #!BG1_TILE_BUF+64*9, #$18)
+
+  ldx #BG2_TILE_BASE+32*9
+  stx $2116
+  DMA7(#$01, #40*64, #^BG2_TILE_BUF, #!BG2_TILE_BUF+64*9, #$18)
+
+  ldx #BG2_TILE_BASE
+  stx $2116
+  DMA7(#$01, #64*9, #^BG2_TILE_BUF, #!BG2_TILE_BUF, #$18)
+skip_screen_dma:
+  lda bar_yl
+  dec
+  asl
+  asl
+  asl
+  sta bar_y     ; physical pos = logical pos * 8 - 8
+  cmp #224
+  bne +
+  lda #1
++
+  sta bar_y
+  cmp #113
+  bcs lower_half
+  sta hdma_math
+  lda #$01
+  sta hdma_math+3
+  bra math_cont
+lower_half
+  sbc #111
+  sta hdma_math+3
+  lda #112
+  sta hdma_math
+math_cont
+  lda bar_xl    ; get logical cursor X pos
+  asl
+  dec
+  asl
+  sta bar_x     ; physical pos = logical pos * 4 - 2
+  sta $2126     ; window 1 left
+  lda bar_wl    ; get logical cursor width
+  asl
+  asl           ; pixel width = logical width * 4 + 1
+  inc
+  sta bar_w     ; = physical width
+  clc
+  adc bar_x     ; + X start coord
+  sta $2127     ; window 1 right
+
+  lda @CFG_ENABLE_SCREENSAVER
+  beq +
+  rep #$20 : .al
+  sep #$10 : .xs
+  lda pad1mem
+  and #$fff0
+  beq nobuttonspressed
+buttonspressed
+  stz idle_count
+  lda menu_brightness ; restore normal brightness when button pressed
+  tax
+  stx tgt_bright
+  ldx #$01
+  stx fade_speed
+  stx fade_count
+nobuttonspressed
+  inc idle_count
+  lda idle_count
+  cmp #IDLE_THRES
+  sep #$20 : .as
+  bne +
+; no input for a long time
+  ldx #DIM_BRIGHTNESS
+  stx tgt_bright
+  ldx #$10
+  stx fade_speed
+  stz fade_count
++
+  lda fade_count
+  cmp fade_speed
+  bne +
+  stz fade_count
+  lda cur_bright
+  cmp tgt_bright
+  beq +
+  bpl bright_down
+bright_up
+  inc
+  sta cur_bright
+  sta $2100
+  bra +
+bright_down
+  dec
+  sta cur_bright
+  sta $2100
++ lda #$01
+  sta isr_done
+  inc fade_count
+  rtl
+
+; IRQ_ROUTINE - called when IRQ triggered
+IRQ_ROUTINE:
+  sep #$20 : .as
+  lda $4211     ; Acknowledge IRQ
+  rtl
