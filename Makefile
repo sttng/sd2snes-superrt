@@ -1,0 +1,97 @@
+MCUSRC := src
+
+README := README*
+
+MK2MCUPATH := $(MCUSRC)/obj-mk2
+MK3MCUPATH := $(MCUSRC)/obj-mk3
+STMMCUPATH := $(MCUSRC)/obj-mk3-stm32
+MK2MCU := firmware.img
+MK3MCU := firmware.im3
+STMMCU := firmware.stm
+
+SAVESTATEPATH := savestate
+SAVESTATEFILES := savestate*.yml
+
+MENUPATH := snes
+MK2MENU := menu.bin
+MK3MENU := m3nu.bin
+
+FPGAPATH := verilog
+MK2EXT := bit
+MK3EXT := bi3
+MK2CORES := base cx4 gsu obc1 sdd1 sa1 dsp sgb sgb_msu
+MK3CORES := base cx4 gsu obc1 sdd1 sa1 dsp sgb
+
+MK2FPGA := $(foreach C,$(MK2CORES),$(FPGAPATH)/sd2snes_$C/fpga_$C.$(MK2EXT))
+MK3FPGA := $(foreach C,$(MK3CORES),$(FPGAPATH)/sd2snes_$C/fpga_$C.$(MK3EXT))
+
+MK2MINI := $(FPGAPATH)/sd2snes_mini/fpga_mini.bit
+MK3MINI := $(FPGAPATH)/sd2snes_mini/fpga_mini.bi3
+
+MK2CLEAN := $(foreach C,$(MK2CORES) mini,$(FPGAPATH)/sd2snes_$C/.clean.$(MK2EXT))
+MK3CLEAN := $(foreach C,$(MK3CORES) mini,$(FPGAPATH)/sd2snes_$C/.clean.$(MK3EXT))
+
+BIN := bin
+
+UTILS := utils
+
+-include src/VERSION
+include src/version.mk
+
+TARGETPARENT := release/v$(CONFIG_VERSION)
+TARGET := $(TARGETPARENT)/sd2snes
+
+all: version fpga build release
+
+fpga: $(MK2FPGA) $(MK3FPGA)
+
+$(MK2FPGA) $(MK2MINI):
+	$(MAKE) -C $(dir $@) mk2
+
+$(MK3FPGA) $(MK3MINI):
+	$(MAKE) -C $(dir $@) mk3
+
+$(MK2CLEAN):
+	$(MAKE) -C $(dir $@) mk2_clean
+
+$(MK3CLEAN):
+	$(MAKE) -C $(dir $@) mk3_clean
+
+build: $(MK2MINI) $(MK3MINI)
+	$(MAKE) -C snes
+	$(MAKE) -C src CONFIG=config-mk2
+	$(MAKE) -C src CONFIG=config-mk3
+	$(MAKE) -C src CONFIG=config-mk3-stm32
+
+clean: $(MK2CLEAN) $(MK3CLEAN)
+	$(MAKE) -C snes clean
+	$(MAKE) -C src clean CONFIG=config-mk2
+	$(MAKE) -C src clean CONFIG=config-mk3
+	$(MAKE) -C src clean CONFIG=config-mk3-stm32
+
+release: version bsxpage
+	rm -rf $(TARGETPARENT)
+	mkdir -p $(TARGET)
+	cp $(BIN)/*.bin $(TARGET)
+ifneq ($(README),)
+	cp $(README) $(TARGET)
+endif
+	cp $(MK2FPGA) $(TARGET)
+	cp $(MK3FPGA) $(TARGET)
+	cp $(MK2MCUPATH)/$(MK2MCU) $(TARGET)
+	cp $(MK3MCUPATH)/$(MK3MCU) $(TARGET)
+	cp $(STMMCUPATH)/$(STMMCU) $(TARGET)
+	cp $(MENUPATH)/$(MK2MENU) $(TARGET)
+	cp $(MENUPATH)/$(MK3MENU) $(TARGET)
+ifneq ($(SAVESTATEPATH),)
+	cp $(SAVESTATEPATH)/$(SAVESTATEFILES) $(TARGET)
+endif
+	cd $(TARGETPARENT) && zip -r sd2snes_firmware_v$(CONFIG_VERSION).zip sd2snes
+
+bsxpage:
+	cd bin && ../$(UTILS)/genbsxpage
+
+version:
+	@echo Version: $(CONFIG_VERSION)
+
+.PHONY: version release bsxpage $(MK2FPGA) $(MK3FPGA) $(MK2MINI) $(MK3MINI) $(MK2CLEAN) $(MK3CLEAN)
