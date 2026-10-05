@@ -102,8 +102,8 @@ uses when bit 3 of the status is clear (cores without the engine).
 
 ## Engine
 
-* **Bit-exact** with `src/srt_render.c` (itself bit-identical to the original
-  RTL): multiplier truncations, 16 bit wrap-arounds, Newton-Raphson with the
+* **Bit-exact** with the original RTL:
+  multiplier truncations, 16 bit wrap-arounds, Newton-Raphson with the
   chip's seed table.
 * **Structure:** one state machine; three 32×32 multipliers (latency 3), six
   16×16 lanes, one 32×32 fast lane (latency 2) for Newton-Raphson chains and
