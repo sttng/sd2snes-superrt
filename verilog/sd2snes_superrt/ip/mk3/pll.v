@@ -111,11 +111,11 @@ module pll (
 		altpll_component.clk0_duty_cycle = 50,
 		altpll_component.clk0_multiply_by = 12,
 		altpll_component.clk0_phase_shift = "0",
-		// c1: SuperRT engine clock, 8 MHz * 48 / 5 = 76.8 MHz (also in main.sdc;
-		// 80 MHz = * 10 / 1 if Fmax allows it, 72 MHz = * 9 / 1)
-		altpll_component.clk1_divide_by = 5,
+		// c1: SuperRT engine clock, 8 MHz * 10 = 80 MHz (also in main.sdc;
+		// fallback 76.8 MHz = * 48 / 5)
+		altpll_component.clk1_divide_by = 1,
 		altpll_component.clk1_duty_cycle = 50,
-		altpll_component.clk1_multiply_by = 48,
+		altpll_component.clk1_multiply_by = 10,
 		altpll_component.clk1_phase_shift = "0",
 		altpll_component.compensate_clock = "CLK0",
 		altpll_component.inclk0_input_frequency = 125000,

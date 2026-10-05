@@ -75,11 +75,11 @@ localparam [6:0]
   S_SPH8B = 7'd9, S_SPH1 = 7'd10, S_SPH2 = 7'd11, S_SPH3 = 7'd12, S_SPH4 = 7'd13,
   S_SPH5 = 7'd14, S_SPH6 = 7'd15, S_SPH8 = 7'd16, S_SPH9 = 7'd17,
   S_PLM0 = 7'd18, S_PLM1 = 7'd19, S_PLA = 7'd20, S_PLB = 7'd21,
-  S_PLD = 7'd23, S_PLF = 7'd25, S_PL10 = 7'd27, S_PL11 = 7'd28,
+  S_SKY0 = 7'd22, S_PLD = 7'd23, S_PLF = 7'd25, S_PL10 = 7'd27, S_PL11 = 7'd28,
   S_BX0 = 7'd29, S_BX1 = 7'd30, S_BX2 = 7'd31, S_BX4 = 7'd32, S_BX5 = 7'd33, S_BX6 = 7'd34,
   S_COMB = 7'd35, S_SN0 = 7'd36, S_SN1 = 7'd37, S_SN2 = 7'd38, S_SN3 = 7'd39,
   S_HP0 = 7'd40, S_HP1 = 7'd41, S_CHK = 7'd42, S_RH = 7'd43, S_PHEND = 7'd44,
-  S_FIN0 = 7'd45, S_FIN1 = 7'd46, S_FIN3 = 7'd48, S_FIN4 = 7'd49,
+  S_FIN0 = 7'd45, S_FIN1 = 7'd46, S_FIN3A = 7'd47, S_FIN3 = 7'd48, S_FIN4 = 7'd49,
   S_FIN5 = 7'd50, S_FIN6 = 7'd51, S_FIN7 = 7'd52, S_FIN8 = 7'd53, S_FIN9 = 7'd54,
   S_SKY1 = 7'd55, S_SKY2 = 7'd56, S_SKY3 = 7'd57, S_NEXT = 7'd58,
   S_OUT0 = 7'd59, S_OUT1 = 7'd60, S_OUT2 = 7'd61, S_OUT3 = 7'd62, S_OUT4 = 7'd63,
@@ -311,7 +311,8 @@ reg [15:0] p_nx = 0, p_ny = 0, p_nz = 0, s_nx = 0, s_ny = 0, s_nz = 0;
 reg [15:0] p_albedo = 0, s_albedo = 0;
 reg [7:0] p_refl = 0;
 reg [7:0] pr = 0, pg = 0, pb = 0, sr = 0, sg = 0, sb = 0;
-reg [15:0] bse = 0;                           // N.L (also the phase's ndl)
+reg [15:0] bse = 0;
+reg [15:0] sum16_r = 0;                       // shading dot product, registered (timing)                           // N.L (also the phase's ndl)
 reg [15:0] sdx = 0, sdy = 0, sdz = 0;         // reflected primary direction
 reg [7:0] spec = 0;
 reg [7:0] ct_r = 0, ct_g = 0, ct_b = 0;
@@ -1133,7 +1134,7 @@ always @(posedge clk) begin
         ma0 <= sx16(rdx); mb0 <= sx16(Lx);
         ma1 <= sx16(rdy); mb1 <= sx16(Ly);
         ma2 <= sx16(rdz); mb2 <= sx16(Lz);
-        wcnt <= W1; state <= S_SKY1;
+        wcnt <= W1; state <= S_SKY0;
       end
     end
     S_FIN1: begin
@@ -1153,11 +1154,17 @@ always @(posedge clk) begin
         ma0 <= sx16(pdx - {b0[14:0], 1'b0}); mb0 <= sx16(Lx);
         ma1 <= sx16(pdy - {b1[14:0], 1'b0}); mb1 <= sx16(Ly);
         ma2 <= sx16(pdz - {b2[14:0], 1'b0}); mb2 <= sx16(Lz);
-        wcnt <= W1; state <= S_FIN4;
+        wcnt <= W1; state <= S_FIN3A;
       end
     end
+    // the products' sum is registered first: sum -> clamp -> multiplier
+    // operands in one cycle was too long for the engine clock
+    S_FIN3A: begin
+      sum16_r <= sum16;
+      state <= S_FIN4;
+    end
     S_FIN4: begin
-      t16 = sum16[15] ? 16'h0000 : (sum16[14] ? 16'h3FFF : sum16);   // clamp to 0..0x3FFF
+      t16 = sum16_r[15] ? 16'h0000 : (sum16_r[14] ? 16'h3FFF : sum16_r);   // clamp to 0..0x3FFF
       ma0 <= sx16(t16); mb0 <= sx16(t16);
       wcnt <= W1; state <= S_FIN5;
     end
@@ -1191,8 +1198,12 @@ always @(posedge clk) begin
     end
 
     // sky
+    S_SKY0: begin                      // sum registered first (timing)
+      sum16_r <= sum16;
+      state <= S_SKY1;
+    end
     S_SKY1: begin
-      t16 = sum16[15] ? 16'h0000 : sum16;
+      t16 = sum16_r[15] ? 16'h0000 : sum16_r;
       ma0 <= sx16(t16); mb0 <= sx16(t16);
       wcnt <= W1; state <= S_SKY2;
     end

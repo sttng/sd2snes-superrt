@@ -1,10 +1,10 @@
 // Behavioural stand-ins for the Quartus IP used by the core (simulation only)
 `timescale 1ns / 1ps
 module pll(input areset, input inclk0, output reg c0 = 0, output reg c1 = 0, output locked);
-  // c0: 96 MHz system clock, c1: 76.8 MHz SuperRT engine clock (8 MHz * 12 / * 48 / 5);
+  // c0: 96 MHz system clock, c1: 80 MHz SuperRT engine clock (8 MHz * 12 / * 10);
   // c1 gets a small offset so the two domains do not run in lock step
   always #5.208 c0 = ~c0;
-  initial begin #1.3; forever #6.510 c1 = ~c1; end
+  initial begin #1.3; forever #6.250 c1 = ~c1; end
   assign locked = 1'b1;
 endmodule
 

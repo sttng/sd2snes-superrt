@@ -49,7 +49,7 @@ create_clock -name {SPI_SCK} -period 20.833 -waveform { 0.000 10.417 } [get_port
 create_generated_clock -name {snes_pll|altpll_component|auto_generated|pll1|clk[0]} -source [get_pins {snes_pll|altpll_component|auto_generated|pll1|inclk[0]}] -duty_cycle 50/1 -multiply_by 12 -master_clock {CLKIN} [get_pins {snes_pll|altpll_component|auto_generated|pll1|clk[0]}] 
 
 # SuperRT engine clock (pll c1, see ip/mk3/pll.v)
-create_generated_clock -name {srt_engine_clk} -source [get_pins {snes_pll|altpll_component|auto_generated|pll1|inclk[0]}] -duty_cycle 50/1 -multiply_by 48 -divide_by 5 -master_clock {CLKIN} [get_pins {snes_pll|altpll_component|auto_generated|pll1|clk[1]}]
+create_generated_clock -name {srt_engine_clk} -source [get_pins {snes_pll|altpll_component|auto_generated|pll1|inclk[0]}] -duty_cycle 50/1 -multiply_by 10 -divide_by 1 -master_clock {CLKIN} [get_pins {snes_pll|altpll_component|auto_generated|pll1|clk[1]}]
 
 #**************************************************************
 # Set Clock Latency
