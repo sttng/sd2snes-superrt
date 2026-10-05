@@ -1,94 +1,89 @@
 # SuperRT on sd2snes mk3
 
 Runs ROMs for Ben Carter's [SuperRT](https://github.com/ShironekoBen/superrt)
-real-time ray tracing chip on an sd2snes / FXPAK Pro mk3.
+ray tracing chip on an sd2snes / FXPAK Pro mk3 (EP4CE15).
 
-The original chip is three pipelined ray tracing engines on a Cyclone V. That
-is about 4× more multipliers, logic and block RAM than the mk3's EP4CE15 has,
-so the work is split:
+The original chip has three pipelined ray engines on a Cyclone V, about 4× what
+the EP4CE15 holds, so the work is split:
 
-* **FPGA** (`verilog/sd2snes_superrt`): the chip's SNES interface (register
-  file, proxied writes, 512 × 64 bit command buffer, multiplier, frame
-  handshake, framebuffer window into PSRAM) and **one sequential ray tracing
-  engine** (`srt_engine.v`). The engine renders each frame into a pixel FIFO.
-* **MCU** (`src/superrt.c`, `src/superrt_core.c`): streams the pixels from
-  the FPGA, maps them to the ROM's 256 colour palette, and writes SNES tiles
-  into the framebuffer bank the SNES isn't reading.
-* `src/srt_render.c` is a bit-accurate C port of the chip. It is the
-  reference for the engine, and the firmware falls back to it (a few seconds
-  per frame) when the loaded core has no engine.
+* **FPGA** (`verilog/sd2snes_superrt`): the chip's SNES interface (registers,
+  command buffer, multiplier, frame handshake, framebuffer window) and one
+  sequential ray tracing engine (`srt_engine.v`) that renders into a pixel FIFO.
+  MSU-1 is a build option (default on).
+* **MCU** (`src/superrt*.c`): streams the pixels, maps them to the ROM's 256
+  colour palette, writes SNES tiles into the bank the SNES isn't showing, and
+  serves MSU-1.
+* `src/srt_render.c`: bit-accurate C model of the chip. Reference for the engine
+  and software fallback for cores without the engine (seconds per frame).
 
-It is the same picture the original chip produces, just slower: about 2.3–7 fps
-instead of about 20 at full resolution. By default the core renders at half
-horizontal resolution (100 × 160, each pixel shown twice), about twice as fast:
-≈5 fps for the demo's start view, ≈7 fps on average. Select toggles full / half
-resolution in the test ROM. MSU-1 works alongside (core build option, default on).
+The picture is identical to the original chip's, just slower. Engine clock
+76.8 MHz, demo start view / average of 12 test views:
+
+| Mode | Demo view | Test views |
+|------|-----------|------------|
+| Half horizontal resolution (default, 100 × 160, pixels doubled) | ≈5.1 fps | ≈7 fps |
+| Full resolution (200 × 160, Select toggles) | ≈2.6 fps | ≈3.5 fps |
+
+The original chip does about 20 fps.
 
 ## Status
 
-| Part | Verified how |
-|------|--------------|
-| Renderer port (`src/srt_render.c`) | bit-identical to a Verilator simulation of the original RTL (`rtlref/`) on 12 camera/light set-ups (all 32000 pixels each) |
-| FPGA engine (`srt_engine.v`) | bit-identical to `srt_render.c`: 12 cameras × 2 frames plus 60 frames of random command lists (all opcodes, conditions, CSG modes, jumps), with random FIFO back-pressure; also with the 4-stage multiplier option |
-| Whole FPGA core | `verilog/sd2snes_superrt/sim`: emulator traffic replayed against the RTL (Verilator). The RTL engine renders 2 frames of the demo; all 64000 pixels are streamed over SPI and match. Register and framebuffer reads and PSRAM writes are checked too. The software path (A3/A4) passes with Icarus Verilog. |
-| SNES ROM + register protocol + MCU loop | end-to-end emulation (`emu/`): SNES CPU (LakeSnes) running the test ROM, a C model of the core (engine + FIFO), and the real MCU code. The demo renders and responds to the joypad, identically on the engine path and the software path. |
-| Firmware | builds for `config-mk3-stm32` and `config-mk3` (LPC1756) |
-| MSU-1 with SuperRT | core: MSU-1 registers answer in the full core simulation (ID check); firmware: MSU-1 service split out of `msu1_loop` (unchanged behaviour) and called from the SuperRT loop. Fix: the MSU-1 service is started before the (slow) start-image setup and no longer resets the track/data position when the SNES already requested one (the first version answered the ROM's track request with an error, so no music). The MSU-1 test ROM retries the track request if it gets an error. Retry path tested in the emulator with an MSU stub. Verified further: core RTL simulation of the whole MSU-1 audio path (`run_sim.sh` op V: SNES request, MCU handshake, DAC output on the pins) and a firmware co-simulation (`superrt/emu/msu_cosim`: the real `msu1.c` against a model of the core + FatFs/SD offload, SNES emulator running the ROM) which plays `SRTTest-1.pcm` bit-exactly. Diagnostic ROMs: `superrt/msu/diag`. On hardware the music was still silent: SRTTest never loads a sound program, so the S-DSP stays in its reset state with MUTE set, which mutes the console amplifier and with it the cartridge audio (not modelled by emulators). The MSU-1 patch now uploads an 8 byte SPC700 program through the IPL that clears the mute flag. |
-| Quartus build / real hardware | software renderer version: works on hardware. Engine version: works on hardware at 64, 72 and 76.8 MHz engine clock. 76.8 MHz with MSU-1: builds and runs on hardware. Fast lane multiplier + shorter plane test: 80 MHz build missed timing (73.5 MHz); restructured version at 76.8 MHz: engine regression, MUL_LAT=4 variant and full core simulation bit-exact; Quartus: timing met (Fmax 79.5 MHz), hardware test pending. |
+* **Works on hardware:** engine at 64, 72 and 76.8 MHz; MSU-1 music.
+* **Built, not yet tried on hardware:** faster plane test + single-stage
+  "fast lane" multiplier (10th build, Fmax 79.5 MHz).
+* **Not built yet:** half resolution mode with the latest timing fixes (the
+  11th/12th builds missed timing by 0.2 / 1.4 ns; `main.qsf` now asks Quartus
+  for high-performance optimisation).
+* **Verified in simulation:** `srt_render.c` is bit-identical to the original
+  RTL (`rtlref/`). The engine is bit-identical to `srt_render.c` in both
+  resolutions (12 cameras, demo view, random command lists, 4-stage multiplier
+  variant). The whole core passes replayed SNES/MCU traffic, including the
+  MSU-1 audio path down to the DAC pins (`verilog/sd2snes_superrt/sim`).
 
-**Speed:** about 11–34 M engine cycles per frame, depending on the view, at the
-engine's 76.8 MHz clock. The demo's start view is 30.0 M cycles (≈2.56 fps), and
-the 12 test views average ≈3.5 fps. The MCU's palette mapping and tile writing run while the
-engine renders the rest of the frame. The LED is lit while a frame is in
-progress.
-
-## What's where
-
-    verilog/sd2snes_superrt/   FPGA core with the ray tracing engine (+ sim/ testbenches)
-    src/srt_render.[ch]        bit-accurate software model of the chip (reference + fallback)
-    src/superrt_core.[ch]      palette mapping, SNES tile conversion, frame render (portable)
-    src/superrt.[ch]           firmware main loop + hardware hooks
-    src/smc.c, fpga.h, ...     detection (title "SUPERRT", LoROM) -> fpga_superrt.bi3
-    superrt/render/            host builds of the renderer (host_render, batch_render, cmpfb.py)
-    superrt/datagen/           srt_datagen.py: palette / palette map / placeholders / MCU data
-    superrt/rom/               build_rom.sh + patch for the test ROM
-    superrt/emu/               srtemu end-to-end emulator
-    superrt/rtlref/            Verilator model of the original RTL (golden reference)
+Details and the Quartus build history: `verilog/sd2snes_superrt/README.md`.
 
 ## Getting it running
 
-1. **FPGA core**: `make mk3` in `verilog/sd2snes_superrt` (Quartus), copy
-   `fpga_superrt.bi3` to `/sd2snes/` on the SD card.
-2. **Firmware**: build `src` with `CONFIG=config-mk3-stm32` (or `config-mk3`)
-   as usual; the SuperRT code is only compiled for mk3.
-3. **ROM**: `superrt/rom/build_rom.sh <superrt checkout>` builds
-   `SRTTest.sfc` (needs git, make, gcc, python3 + numpy + pillow). Nothing from
-   the Windows-only C# testbed is needed: `srt_datagen.py` renders the 144
-   palette views of the testbed's "PAL Regen" with the C renderer and ports
-   its palette generator.
+1. **FPGA core:** build `verilog/sd2snes_superrt` in Quartus, copy
+   `fpga_superrt.bi3` to `/sd2snes/`.
+2. **Firmware:** build `src` with `CONFIG=config-mk3-stm32` (or `config-mk3`).
+3. **ROM:** `superrt/rom/build_rom.sh <superrt checkout>` builds `SRTTest.sfc`
+   (needs git, make, gcc, python3 with numpy and pillow; the Windows-only C#
+   testbed is not needed). `MSU1=1` adds background music; make the track with
+   `superrt/msu/make_msu_track.sh` and keep `SRTTest.sfc`, `SRTTest.msu` and
+   `SRTTest-1.pcm` in one folder.
+
+Core, firmware and ROM go together: the half resolution mode needs all three
+from the same version.
 
 ## ROM requirements
 
-Any SuperRT ROM works if
+* Header title starting with `SUPERRT` (LoROM).
+* At file offset `0x8000` the `SRTMCU01` descriptor from `srt_datagen.py`
+  (palette mapping k-d tree + offset of a 32000 byte start-up image).
+  `rom/SRTTest-sd2snes.patch` adds both to the test ROM.
+* Optional: register `$BEBA` bit 0 selects full resolution (default half).
+* For MSU-1 audio on real hardware the ROM must unmute the S-DSP (the test ROM
+  uploads a tiny SPC700 program); emulators don't model this mute.
 
-* its header title starts with `SUPERRT` (LoROM), and
-* file offset `0x8000` holds the `SRTMCU01` descriptor written by
-  `srt_datagen.py`: the palette mapping as a k-d tree (the MCU has no room for
-  the 32 KB palette map) and the offset of a 32000 byte start-up image
-  (`0x10000` in the test ROM). The SNES never sees these banks because the
-  SuperRT memory map ignores the bank byte.
+## What's where
 
-`rom/SRTTest-sd2snes.patch` adds both to `SRTTest.s` (2 `incbin`s in the
-otherwise empty ROM1/ROM2 banks).
+    verilog/sd2snes_superrt/   FPGA core + engine, sim/ testbenches
+    src/srt_render.[ch]        bit-accurate model of the chip
+    src/superrt*.[ch]          firmware: palette mapping, tiles, main loop
+    superrt/rom/               test ROM build + patches (sd2snes, resolution, MSU-1)
+    superrt/msu/               MSU-1 track tool, diagnostic ROMs
+    superrt/emu/               end-to-end emulator, MSU-1 firmware co-simulation
+    superrt/datagen/           palette / start image / descriptor generator
+    superrt/rtlref/            Verilator model of the original RTL
 
 ## Not supported
 
-* sd2snes in-game hooks / button combos / cheats / savestates (the core has
-  no cheat engine; return to the menu with a long reset)
+* sd2snes in-game hooks, cheats, savestates (long reset returns to the menu)
 * mk2
 
 ## Licences
 
-SuperRT is © 2021 Ben Carter, MIT licence (`LICENSE-SuperRT`); the
-renderer and the core's register logic are derived from it. LakeSnes is only
-used as an unmodified external checkout plus `emu/lakesnes.patch`.
+SuperRT is © 2021 Ben Carter, MIT licence (`LICENSE-SuperRT`); the renderer and
+the core's register logic are derived from it. LakeSnes is used as an external
+checkout plus `emu/lakesnes.patch`.
