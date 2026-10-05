@@ -96,6 +96,13 @@
 #define FPGA_CMD_SETFEATURE      (0xed)
 #define FPGA_CMD_SET213F         (0xee)
 #define FPGA_CMD_CHIPFEAT        (0xef)
+#define FPGA_CMD_SRT_STATUS      (0xa0) /* SuperRT core only */
+#define FPGA_CMD_SRT_ACK         (0xa1)
+#define FPGA_CMD_SRT_DONE        (0xa2)
+#define FPGA_CMD_SRT_PARAMS      (0xa3)
+#define FPGA_CMD_SRT_CMDBUF      (0xa4)
+#define FPGA_CMD_SRT_PIXELS      (0xa5)
+#define FPGA_CMD_SRT_INFO        (0xa6)
 #define FPGA_CMD_TEST            (0xf0)
 #define FPGA_CMD_GETSTATUS       (0xf1)
 #define FPGA_CMD_MSUGETADDR      (0xf2)
@@ -149,4 +156,11 @@ void fpga_write_cheat(uint8_t index, uint32_t code);
 void fpga_set_chipfeat(uint16_t feat);
 uint8_t fpga_read_config(uint8_t group, uint8_t index);
 void fpga_write_config(uint8_t group, uint8_t index, uint8_t value, uint8_t invmask);
+/* SuperRT core */
+uint8_t fpga_srt_status(void);
+void fpga_srt_ack(void);
+void fpga_srt_done(void);
+void fpga_srt_read(uint8_t cmd, uint8_t *buf, uint16_t len);
+uint16_t fpga_srt_info(uint32_t *cycles);
+
 #endif

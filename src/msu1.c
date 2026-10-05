@@ -247,18 +247,25 @@ int msu1_check(uint8_t* filename) {
   return 1;
 }
 
-int msu1_loop() {
-/* it is assumed that the MSU file is already opened by calling msu1_check(). */
-  uint16_t dac_addr = 0;
-  uint16_t msu_addr = 0;
-  uint8_t msu_repeat = 0;
-  uint16_t msu_track = 0;
-  uint32_t msu_offset = 0;
-  int32_t resume_msu_track = -1;
-  uint32_t resume_msu_offset = 0;
-  int msu_res;
-  uint8_t cmd;
+/* MSU-1 servicing, split into start / service / stop so that other main
+   loops (SuperRT) can serve MSU-1 next to their own work */
+static uint16_t dac_addr = 0;
+static uint16_t msu_addr = 0;
+static uint8_t msu_repeat = 0;
+static uint16_t msu_track = 0;
+static uint32_t msu_offset = 0;
+static int32_t resume_msu_track = -1;
+static uint32_t resume_msu_offset = 0;
 
+void msu1_start() {
+/* it is assumed that the MSU file is already opened by calling msu1_check(). */
+  dac_addr = 0;
+  msu_addr = 0;
+  msu_repeat = 0;
+  msu_track = 0;
+  msu_offset = 0;
+  resume_msu_track = -1;
+  resume_msu_offset = 0;
   /* set initial last SRAM check to 1s in the past to trigger a single
      immediate SRAM check after booting the game */
   msu_last_sram_check = getticks() - MS_TO_TICKS(1000);
@@ -280,15 +287,173 @@ int msu1_loop() {
   sd_offload_tgt=2;
   f_read(&msudata, file_buf, MSU_DATA_BUFSIZE, &msu_data_bytes_read);
 
-  prepare_audio_track(0, MSU_PCM_OFFSET_WAVEDATA);
-  prepare_data(0);
+  /* Default track / data position. If the SNES has already asked for a
+     track or a data position (it runs while this is set up), leave the
+     request pending for msu1_service(): resetting to track 0 / offset 0
+     would acknowledge (and lose) it. */
+  fpga_status_now = fpga_status();
+  if(!(fpga_status_now & MSU_FPGA_STATUS_AUDIO_START)) {
+    prepare_audio_track(0, MSU_PCM_OFFSET_WAVEDATA);
+  }
+  if(!(fpga_status_now & MSU_FPGA_STATUS_DATA_START)) {
+    prepare_data(0);
+  }
   msu_data_usage = MSU_IDLE;
 
+  fpga_status_prev = fpga_status();
+  fpga_status_now = fpga_status_prev;
+}
+
+/* one round of MSU-1 work: buffer refills, track / data requests, playback
+   control, SRAM autosave. Returns the result of a data page refill read, or
+   -1 if there was none (msu1_loop has always fed that into its loop
+   condition). */
+int msu1_service() {
+  int fres = -1;
+  fpga_status_now = fpga_status();
+
+  /* ACK as fast as possible */
+  if(fpga_status_now & MSU_FPGA_STATUS_CTRL_START) {
+    set_msu_status(MSU_INT_STATUS_CLEAR_CTRL_PENDING);
+  }
+
+  /* Data buffer refill */
+  if((fpga_status_now & MSU_FPGA_STATUS_MSU_READ_MSB) != (fpga_status_prev & MSU_FPGA_STATUS_MSU_READ_MSB)) {
+    DBG_MSU1 printf("old MSB=%04x new MSB=%04x data\n", fpga_status_prev & MSU_FPGA_STATUS_MSU_READ_MSB, fpga_status_now & MSU_FPGA_STATUS_MSU_READ_MSB);
+    if(fpga_status_now & MSU_FPGA_STATUS_MSU_READ_MSB) {
+      msu_addr = 0x0;
+      msu_page1_start = msu_page2_start + MSU_DATA_BUFSIZE / 2;
+    } else {
+      msu_addr = MSU_DATA_BUFSIZE / 2;
+      msu_page2_start = msu_page1_start + MSU_DATA_BUFSIZE / 2;
+    }
+    set_msu_addr(msu_addr);
+    sd_offload_tgt = 2;
+    ff_sd_offload = 1;
+    fres = f_read(&msudata, file_buf, MSU_DATA_BUFSIZE / 2, &msu_data_bytes_read);
+    if(f_eof(&msudata)) {
+      msu_data_usage = MSU_IDLE;
+    }
+    DBG_MSU1 printf("data page %d refilled. res=%d page1=%08lx page2=%08lx\n", msu_addr ? 2 : 1, fres, msu_page1_start, msu_page2_start);
+  }
+
+  /* Audio buffer refill */
+  if((fpga_status_now & MSU_FPGA_STATUS_DAC_READ_MSB) != (fpga_status_prev & MSU_FPGA_STATUS_DAC_READ_MSB)) {
+    if(fpga_status_now & MSU_FPGA_STATUS_DAC_READ_MSB) {
+      dac_addr = 0;
+    } else {
+      dac_addr = MSU_DAC_BUFSIZE / 2;
+    }
+    set_dac_addr(dac_addr);
+    sd_offload_tgt = 1;
+    ff_sd_offload = 1;
+    f_read(&msuaudio, file_buf, MSU_DAC_BUFSIZE / 2, &msu_audio_bytes_read);
+  }
+
+  if(fpga_status_now & MSU_FPGA_STATUS_AUDIO_START) {
+    /* get trackno */
+    msu_track = get_msu_track();
+    DBG_MSU1 printf("Audio requested! Track=%d\n", msu_track);
+
+    prepare_audio_track(msu_track, (msu_track == resume_msu_track) ? resume_msu_offset : MSU_PCM_OFFSET_WAVEDATA);
+    if(msu_track == resume_msu_track) {
+      resume_msu_track = -1;
+    }
+  }
+
+  if(fpga_status_now & MSU_FPGA_STATUS_DATA_START) {
+    /* get address */
+    msu_offset=get_msu_offset();
+    prepare_data(msu_offset);
+  }
+
+  if(fpga_status_now & MSU_FPGA_STATUS_CTRL_START) {
+    if(fpga_status_now & MSU_FPGA_STATUS_CTRL_RESUME_FLAG_BIT && !(fpga_status_now & MSU_FPGA_STATUS_CTRL_PLAY_FLAG_BIT)) {
+      resume_msu_track = msu_track;
+      resume_msu_offset = f_tell(&msuaudio);
+    }
+
+    if(fpga_status_now & MSU_FPGA_STATUS_CTRL_REPEAT_FLAG_BIT) {
+      msu_repeat = 1;
+      set_msu_status(MSU_SNES_STATUS_SET_AUDIO_REPEAT);
+      DBG_MSU1 printf("Repeat set!\n");
+    } else {
+      msu_repeat = 0;
+      set_msu_status(MSU_SNES_STATUS_CLEAR_AUDIO_REPEAT);
+      DBG_MSU1 printf("Repeat clear!\n");
+    }
+
+    if(fpga_status_now & MSU_FPGA_STATUS_CTRL_PLAY_FLAG_BIT) {
+      DBG_MSU1 printf("PLAY!\n");
+      set_msu_status(MSU_SNES_STATUS_SET_AUDIO_PLAY);
+      msu_audio_usage = MSU_BUSY;
+      dac_play();
+    } else {
+      DBG_MSU1 printf("PAUSE!\n");
+      set_msu_status(MSU_SNES_STATUS_CLEAR_AUDIO_PLAY);
+      msu_audio_usage = MSU_IDLE;
+      dac_pause();
+    }
+  }
+
+  fpga_status_prev = fpga_status_now;
+
+  /* handle loop / end */
+  if(msu_audio_bytes_read < MSU_DAC_BUFSIZE / 2) {
+    ff_sd_offload=0;
+    sd_offload=0;
+    DBG_MSU1 printf("wanted %u bytes, got %u (EOF)\n", MSU_DAC_BUFSIZE / 2, msu_audio_bytes_read);
+    if(msu_repeat) {
+      DBG_MSU1 printf("loop\n");
+      ff_sd_offload=1;
+      sd_offload_tgt=1;
+      f_lseek(&msuaudio, MSU_PCM_OFFSET_WAVEDATA + msu_loop_point * 4);
+      ff_sd_offload=1;
+      sd_offload_tgt=1;
+      DBG_MSU1 printf("---filling rest of buffer from loop point for %u bytes\n", (MSU_DAC_BUFSIZE / 2) - msu_audio_bytes_read);
+      f_read(&msuaudio, file_buf, (MSU_DAC_BUFSIZE / 2) - msu_audio_bytes_read, &msu_audio_bytes_read);
+    } else {
+      set_msu_status(MSU_SNES_STATUS_CLEAR_AUDIO_PLAY);
+      dac_pause();
+      msu_audio_usage = MSU_IDLE;
+    }
+    msu_audio_bytes_read = MSU_DAC_BUFSIZE;
+  }
+
+  /* check if we can sneak in an SRAM poll / save */
+  if(is_msu_free_to_save()) {
+    msu_savecheck(0);
+  }
+  return fres;
+}
+
+/* end of MSU-1 use (SNES reset): returns 1 for a reset to the menu */
+int msu1_stop(int res) {
+  dac_pause();
+  f_close(&msuaudio);
+  msu_audio_usage = MSU_IDLE;
+  msu_data_usage = MSU_IDLE;
+// TODO have FPGA automatically reset SRTC on detected reset
+  fpga_reset_srtc_state();
+  DBG_MSU1 printf("Reset ");
+  if(res == SNES_RESET_LONG) {
+    f_close(&msudata);
+    DBG_MSU1 printf("to menu\n");
+    return 1;
+  }
+  save_during_msu_shortreset();
+  DBG_MSU1 printf("game\n");
+  return 0;
+}
+
+int msu1_loop() {
+  int msu_res;
+  uint8_t cmd;
+  msu1_start();
 /* audio_start, data_start, 0, audio_ctrl[1:0], ctrl_start */
   msu_res = SNES_RESET_NONE;
-  fpga_status_prev = fpga_status();
-  fpga_status_now = fpga_status();
   while(msu_res == SNES_RESET_NONE){
+    int fres;
     msu_res = get_snes_reset_state();
     cmd = snes_get_mcu_cmd();
     if(cmd) {
@@ -323,136 +488,10 @@ int msu1_loop() {
     cli_entrycheck();
     if (!cmd) { cmd = usbint_handler(); }
 
-    fpga_status_now = fpga_status();
-
-    /* ACK as fast as possible */
-    if(fpga_status_now & MSU_FPGA_STATUS_CTRL_START) {
-      set_msu_status(MSU_INT_STATUS_CLEAR_CTRL_PENDING);
-    }
-
-    /* Data buffer refill */
-    if((fpga_status_now & MSU_FPGA_STATUS_MSU_READ_MSB) != (fpga_status_prev & MSU_FPGA_STATUS_MSU_READ_MSB)) {
-      DBG_MSU1 printf("old MSB=%04x new MSB=%04x data\n", fpga_status_prev & MSU_FPGA_STATUS_MSU_READ_MSB, fpga_status_now & MSU_FPGA_STATUS_MSU_READ_MSB);
-      if(fpga_status_now & MSU_FPGA_STATUS_MSU_READ_MSB) {
-        msu_addr = 0x0;
-        msu_page1_start = msu_page2_start + MSU_DATA_BUFSIZE / 2;
-      } else {
-        msu_addr = MSU_DATA_BUFSIZE / 2;
-        msu_page2_start = msu_page1_start + MSU_DATA_BUFSIZE / 2;
-      }
-      set_msu_addr(msu_addr);
-      sd_offload_tgt = 2;
-      ff_sd_offload = 1;
-      msu_res = f_read(&msudata, file_buf, MSU_DATA_BUFSIZE / 2, &msu_data_bytes_read);
-      if(f_eof(&msudata)) {
-        msu_data_usage = MSU_IDLE;
-      }
-      DBG_MSU1 printf("data page %d refilled. res=%d page1=%08lx page2=%08lx\n", msu_addr ? 2 : 1, msu_res, msu_page1_start, msu_page2_start);
-    }
-
-    /* Audio buffer refill */
-    if((fpga_status_now & MSU_FPGA_STATUS_DAC_READ_MSB) != (fpga_status_prev & MSU_FPGA_STATUS_DAC_READ_MSB)) {
-      if(fpga_status_now & MSU_FPGA_STATUS_DAC_READ_MSB) {
-        dac_addr = 0;
-      } else {
-        dac_addr = MSU_DAC_BUFSIZE / 2;
-      }
-      set_dac_addr(dac_addr);
-      sd_offload_tgt = 1;
-      ff_sd_offload = 1;
-      f_read(&msuaudio, file_buf, MSU_DAC_BUFSIZE / 2, &msu_audio_bytes_read);
-    }
-
-    if(fpga_status_now & MSU_FPGA_STATUS_AUDIO_START) {
-      /* get trackno */
-      msu_track = get_msu_track();
-      DBG_MSU1 printf("Audio requested! Track=%d\n", msu_track);
-
-      prepare_audio_track(msu_track, (msu_track == resume_msu_track) ? resume_msu_offset : MSU_PCM_OFFSET_WAVEDATA);
-      if(msu_track == resume_msu_track) {
-        resume_msu_track = -1;
-      }
-    }
-
-    if(fpga_status_now & MSU_FPGA_STATUS_DATA_START) {
-      /* get address */
-      msu_offset=get_msu_offset();
-      prepare_data(msu_offset);
-    }
-
-    if(fpga_status_now & MSU_FPGA_STATUS_CTRL_START) {
-      if(fpga_status_now & MSU_FPGA_STATUS_CTRL_RESUME_FLAG_BIT && !(fpga_status_now & MSU_FPGA_STATUS_CTRL_PLAY_FLAG_BIT)) {
-        resume_msu_track = msu_track;
-        resume_msu_offset = f_tell(&msuaudio);
-      }
-
-      if(fpga_status_now & MSU_FPGA_STATUS_CTRL_REPEAT_FLAG_BIT) {
-        msu_repeat = 1;
-        set_msu_status(MSU_SNES_STATUS_SET_AUDIO_REPEAT);
-        DBG_MSU1 printf("Repeat set!\n");
-      } else {
-        msu_repeat = 0;
-        set_msu_status(MSU_SNES_STATUS_CLEAR_AUDIO_REPEAT);
-        DBG_MSU1 printf("Repeat clear!\n");
-      }
-
-      if(fpga_status_now & MSU_FPGA_STATUS_CTRL_PLAY_FLAG_BIT) {
-        DBG_MSU1 printf("PLAY!\n");
-        set_msu_status(MSU_SNES_STATUS_SET_AUDIO_PLAY);
-        msu_audio_usage = MSU_BUSY;
-        dac_play();
-      } else {
-        DBG_MSU1 printf("PAUSE!\n");
-        set_msu_status(MSU_SNES_STATUS_CLEAR_AUDIO_PLAY);
-        msu_audio_usage = MSU_IDLE;
-        dac_pause();
-      }
-    }
-
-    fpga_status_prev = fpga_status_now;
-
-    /* handle loop / end */
-    if(msu_audio_bytes_read < MSU_DAC_BUFSIZE / 2) {
-      ff_sd_offload=0;
-      sd_offload=0;
-      DBG_MSU1 printf("wanted %u bytes, got %u (EOF)\n", MSU_DAC_BUFSIZE / 2, msu_audio_bytes_read);
-      if(msu_repeat) {
-        DBG_MSU1 printf("loop\n");
-        ff_sd_offload=1;
-        sd_offload_tgt=1;
-        f_lseek(&msuaudio, MSU_PCM_OFFSET_WAVEDATA + msu_loop_point * 4);
-        ff_sd_offload=1;
-        sd_offload_tgt=1;
-        DBG_MSU1 printf("---filling rest of buffer from loop point for %u bytes\n", (MSU_DAC_BUFSIZE / 2) - msu_audio_bytes_read);
-        f_read(&msuaudio, file_buf, (MSU_DAC_BUFSIZE / 2) - msu_audio_bytes_read, &msu_audio_bytes_read);
-      } else {
-        set_msu_status(MSU_SNES_STATUS_CLEAR_AUDIO_PLAY);
-        dac_pause();
-        msu_audio_usage = MSU_IDLE;
-      }
-      msu_audio_bytes_read = MSU_DAC_BUFSIZE;
-    }
-
-    /* check if we can sneak in an SRAM poll / save */
-    if(is_msu_free_to_save()) {
-      msu_savecheck(0);
-    }
+    fres = msu1_service();
+    if(fres >= 0) msu_res = fres;
   }
-  dac_pause();
-  f_close(&msuaudio);
-  msu_audio_usage = MSU_IDLE;
-  msu_data_usage = MSU_IDLE;
-// TODO have FPGA automatically reset SRTC on detected reset
-  fpga_reset_srtc_state();
-  DBG_MSU1 printf("Reset ");
-  if(msu_res == SNES_RESET_LONG) {
-    f_close(&msudata);
-    DBG_MSU1 printf("to menu\n");
-    return 1;
-  }
-  save_during_msu_shortreset();
-  DBG_MSU1 printf("game\n");
-  return 0;
+  return msu1_stop(msu_res);
 }
 
 uint8_t msu_readbyte(uint16_t addr) {

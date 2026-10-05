@@ -100,6 +100,7 @@ typedef struct __attribute__ ((__packed__)) {
   uint8_t error;              /* error text ID */
   uint8_t* error_param;       /* \0 separated list of parameters for error text */
   snes_header_t header;       /* original header from ROM image */
+  uint8_t has_superrt;        /* SuperRT (ray tracing chip, rendered by the MCU) */
 } snes_romprops_t;
 
 void smc_id(snes_romprops_t*, uint32_t file_offset);
