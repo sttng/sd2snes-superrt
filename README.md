@@ -17,26 +17,21 @@ the EP4CE15 holds, so the work is split:
   and software fallback for cores without the engine (seconds per frame).
 
 The picture is identical to the original chip's, just slower. Engine clock
-76.8 MHz, demo start view / average of 12 test views:
+80 MHz, demo start view / average of 12 test views:
 
-| Mode | Demo view | Test views |
-|------|-----------|------------|
-| Half horizontal resolution (default, 100 × 160, pixels doubled) | ≈5.1 fps | ≈7 fps |
-| Full resolution (200 × 160, Select toggles) | ≈2.6 fps | ≈3.5 fps |
+| Mode | Demo start view | 12 test views (avg.) |
+|------|-----------------|----------------------|
+| Half horizontal resolution (default, pixels doubled) | 5.3 fps | 7.3 fps |
+| Full resolution (Select toggles) | 2.7 fps | 3.6 fps |
 
 The original chip does about 20 fps.
 
 ## Status
 
-* **Works on hardware** (13th Quartus build, engine Fmax 82.3 MHz at
-  76.8 MHz): half / full resolution, fast lane multiplier, MSU-1 music.
-* **Verified in simulation:** `srt_render.c` is bit-identical to the original
-  RTL (`rtlref/`). The engine is bit-identical to `srt_render.c` in both
-  resolutions (12 cameras, demo view, random command lists, 4-stage multiplier
-  variant). The whole core passes replayed SNES/MCU traffic, including the
-  MSU-1 audio path down to the DAC pins (`verilog/sd2snes_superrt/sim`).
+Works on hardware: Quartus build with the engine at 80 MHz (Fmax 85.1 MHz,
+91 % of the FPGA), half / full resolution, MSU-1 music.
 
-Details and the Quartus build history: `verilog/sd2snes_superrt/README.md`.
+Build history and engine details: `verilog/sd2snes_superrt/README.md`.
 
 ## Getting it running
 
@@ -79,5 +74,4 @@ from the same version.
 ## Licences
 
 SuperRT is © 2021 Ben Carter, MIT licence (`LICENSE-SuperRT`); the renderer and
-the core's register logic are derived from it. LakeSnes is used as an external
-checkout plus `emu/lakesnes.patch`.
+the core's register logic are derived from it.
