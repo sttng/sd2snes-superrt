@@ -1,0 +1,18 @@
+--- a/SRT-SNES/Source/SRTTest.s	2021-10-28 16:02:49.000000000 +0800
++++ b/SRT-SNES/Source/SRTTest.s	2026-10-04 20:05:37.224638336 +0800
+@@ -3035,3 +3035,15 @@
+ 	.byte %00000000
+ 
+ 	; This gives us 64 characters
++
++; ---------------------------------------------------------------------------
++; sd2snes "superrt" core: data for the MCU-side renderer. The SNES never sees
++; these banks (the SuperRT memory map ignores bank bits), the sd2snes MCU reads
++; them from the cartridge memory.
++;   ROM file offset 0x08000: descriptor + palette mapping tree (SRTMCU01)
++;   ROM file offset 0x10000: start-up framebuffer image (SNES 8bpp tiles)
++; ---------------------------------------------------------------------------
++.segment "ROM1"
++incbin SRTMcuData, "Data/SRTMcuData.bin"
++.segment "ROM2"
++incbin SRTStartImage, "Data/Placeholder2.bin"

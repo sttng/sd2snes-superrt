@@ -1,0 +1,58 @@
+--- a/SRT-SNES/Source/SRTTest.s
++++ b/SRT-SNES/Source/SRTTest.s
+@@ -1005,6 +1005,25 @@
+ 	stz OldStartState
+ StartCheckDone:
+ 
++	; sd2snes: Select toggles between half (default) and full horizontal resolution
++	; (edge detected here: this loop runs once per rendered frame)
++	RW a16i16
++	lda SFX_joy1cont
++	bit #JOY_SELECT
++	RW a8i16
++	beq NoSelect
++	lda OldSelectState
++	bne SelectCheckDone
++	lda #1
++	sta OldSelectState
++	lda FullRes
++	eor #1
++	sta FullRes
++	bra SelectCheckDone
++NoSelect:
++	stz OldSelectState
++SelectCheckDone:
++
+ 	; Update animation
+ 
+ 	RW a8i16
+@@ -1153,6 +1172,9 @@
+ 	; Upload ray parameters to SRT
+ 
+ 	RW a8i16
++	lda SRTIO_Mode ; sd2snes: resolution mode for the next frame (proxied write)
++	lda FullRes
++	jsr SRTProxyWrite
+ 	lda SRTIO_RayStartX0 ; Initialise IO register address to the first parameter register (will auto-increment after this)
+ 	lda #30 ; Number of bytes we need to upload to the ray parameter registers
+ 	ldy #.loword(RayParameters)
+@@ -2119,6 +2141,8 @@
+ SlowDownTimer: .res 1
+ ShowDebug: .res 1
+ OldStartState: .res 1
++FullRes: .res 1 ; sd2snes: 0 = half horizontal resolution (default), 1 = full
++OldSelectState: .res 1
+ NeedNonDebugRefresh: .res 1
+ HBlankPhase: .res 1
+ DebugScreenDirtyMinY: .res 1 ; Minimum updated row (or $7F for no updates)
+@@ -2294,6 +2318,10 @@
+ ; SRT chip appear to be never busy and thus the main update loop actually runs
+ SRTIO_Status: .byte 0
+ 
++; sd2snes: resolution mode, bit 0 = full horizontal resolution (0 = half,
++; the default: every other pixel is traced and shown twice)
++SRTIO_Mode: .res 1
++
+ ; Write proxy area $BF00 - BFFF
+ .org $BF00
+ SRTIO_WriteProxy: .res $100

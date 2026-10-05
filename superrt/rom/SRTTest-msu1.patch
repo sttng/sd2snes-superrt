@@ -1,0 +1,128 @@
+--- a/SRT-SNES/Source/SRTTest.s
++++ b/SRT-SNES/Source/SRTTest.s
+@@ -735,6 +735,125 @@
+ 
+ 	; Init done - enable screen
+ 	RW a8i16
++
++; Unmute the SNES audio: after reset the S-DSP has FLG bit 6 (MUTE) set, and
++; its mute output silences the console's amplifier - which also carries the
++; cartridge (MSU-1) audio. Upload an 8 byte program to the sound CPU through
++; the IPL boot ROM:  mov $F2,#$6C / mov $F3,#$20 (FLG: unmuted, echo
++; writes off) / bra *.   (a8, any data bank)
++:	lda f:$002140		; IPL ready ($AA)
++	cmp #$AA
++	bne :-
++	lda #$00
++	sta f:$002142		; destination $0200
++	lda #$02
++	sta f:$002143
++	lda #$01
++	sta f:$002141		; non-zero: transfer
++	lda #$CC
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++	lda #$8F
++	sta f:$002141
++	lda #$00
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++	lda #$6C
++	sta f:$002141
++	lda #$01
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++	lda #$F2
++	sta f:$002141
++	lda #$02
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++	lda #$8F
++	sta f:$002141
++	lda #$03
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++	lda #$20
++	sta f:$002141
++	lda #$04
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++	lda #$F3
++	sta f:$002141
++	lda #$05
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++	lda #$2F
++	sta f:$002141
++	lda #$06
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++	lda #$FE
++	sta f:$002141
++	lda #$07
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++	lda #$00
++	sta f:$002142		; start at $0200
++	lda #$02
++	sta f:$002143
++	lda #$00
++	sta f:$002141		; zero: execute
++	lda #$09
++	sta f:$002140
++:	cmp f:$002140
++	bne :-
++
++	; MSU-1 background music: if an MSU-1 is present ("S-MSU1" at $2002),
++	; play track 1 (<rom>-1.pcm) at full volume, repeating
++	lda f:$002002
++	cmp #$53			; 'S'
++	bne @NoMSU
++	lda f:$002003
++	cmp #$2D			; '-'
++	bne @NoMSU
++	lda #$FF
++	sta f:$002006		; volume
++	phx
++	phy
++	ldx #$0020			; retries (firmware may still be starting up)
++@MSURequest:
++	lda #$01
++	sta f:$002004		; track number, low byte
++	lda #$00
++	sta f:$002005		; track number, high byte (starts loading the track)
++@MSUWait:
++	lda f:$002000
++	bit #$40			; audio busy
++	bne @MSUWait
++	bit #$08			; audio error (track missing / not ready)
++	beq @MSUPlay
++	ldy #$0000			; ~0.4s delay, then ask again
++@MSUDelay:
++	nop
++	nop
++	dey
++	bne @MSUDelay
++	dex
++	bne @MSURequest
++	bra @MSUDone
++@MSUPlay:
++	lda #$03			; play + repeat
++	sta f:$002007
++@MSUDone:
++	ply
++	plx
++@NoMSU:
++
+ 	lda #inidisp(ON, DISP_BRIGHTNESS_MAX)
+ 	sta INIDISP
+ 
