@@ -28,12 +28,8 @@ The original chip does about 20 fps.
 
 ## Status
 
-* **Works on hardware:** engine at 64, 72 and 76.8 MHz; MSU-1 music.
-* **Built, not yet tried on hardware:** faster plane test + single-stage
-  "fast lane" multiplier (10th build, Fmax 79.5 MHz).
-* **Not built yet:** half resolution mode with the latest timing fixes (the
-  11th/12th builds missed timing by 0.2 / 1.4 ns; `main.qsf` now asks Quartus
-  for high-performance optimisation).
+* **Works on hardware** (13th Quartus build, engine Fmax 82.3 MHz at
+  76.8 MHz): half / full resolution, fast lane multiplier, MSU-1 music.
 * **Verified in simulation:** `srt_render.c` is bit-identical to the original
   RTL (`rtlref/`). The engine is bit-identical to `srt_render.c` in both
   resolutions (12 cameras, demo view, random command lists, 4-stage multiplier
