@@ -1,5 +1,8 @@
 # SuperRT on sd2snes mk3
 
+![SuperRT Image](https://raw.githubusercontent.com/sttng/sd2snes-superrt/refs/heads/SuperRT/superrt-photo-pov-fullres.png)
+
+
 Runs ROMs for Ben Carter's [SuperRT](https://github.com/ShironekoBen/superrt)
 ray tracing chip on an sd2snes / FXPAK Pro mk3 (EP4CE15).
 
