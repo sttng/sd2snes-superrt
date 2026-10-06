@@ -24,15 +24,19 @@ The picture is identical to the original chip's, just slower. Engine clock
 
 | Mode | Demo start view | 12 test views (avg.) |
 |------|-----------------|----------------------|
-| Half horizontal resolution (default, pixels doubled) | 5.3 fps | 7.3 fps |
-| Full resolution (Select toggles) | 2.7 fps | 3.6 fps |
+| Half horizontal resolution (default, pixels doubled) | 6.0 fps | 8.3 fps |
+| Full resolution (Select toggles) | 3.0 fps | 4.2 fps |
 
-The original chip does about 20 fps.
+These are engine times. On screen the SNES needs about 10 ms per frame for its
+upload, and in half resolution the MCU's pixel and tile work now takes about as
+long as the engine: the demo start view runs at 5.2 fps on hardware. The
+original chip does about 20 fps.
 
 ## Status
 
-Works on hardware: Quartus build with the engine at 80 MHz (Fmax 85.1 MHz,
-91 % of the FPGA), half / full resolution, MSU-1 music.
+Works on hardware: 17th Quartus build, engine at 80 MHz with single-stage
+multipliers (12.6 % fewer cycles than before, still bit-exact), Fmax 80.8 MHz,
+89 % of the FPGA; half / full resolution, MSU-1 music.
 
 Build history and engine details: `verilog/sd2snes_superrt/README.md`.
 
@@ -48,7 +52,8 @@ Build history and engine details: `verilog/sd2snes_superrt/README.md`.
    `SRTTest-1.pcm` in one folder.
 
 Core, firmware and ROM go together: the half resolution mode needs all three
-from the same version.
+from the same version, and with the current (faster) core an older firmware
+makes the MSU-1 music crackle once per frame.
 
 ## ROM requirements
 
