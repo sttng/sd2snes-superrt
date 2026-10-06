@@ -180,9 +180,12 @@ int srt_core_render_hw(int bank, int half) {
       if(srt_hal_read_pixels(line_rgb, half ? SRT_SCREEN_WIDTH / 2 : SRT_SCREEN_WIDTH)) return 1;
       if(half) line_double();
       line_to_tiles(y);
+      /* also serves MSU-1: with a fast engine the MCU rarely waits for pixels
+         (srt_hal_read_pixels serves it while waiting), so serve it after
+         every line as well */
+      if(srt_hal_poll()) return 1;
     }
     srt_hal_mem_write(base + (uint32_t)ty * sizeof(tile_row), tile_row, sizeof(tile_row));
-    if(srt_hal_poll()) return 1;
   }
   return 0;
 }

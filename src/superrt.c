@@ -39,8 +39,20 @@ void srt_hal_mem_read(uint32_t addr, void *buf, uint16_t len) {
   sram_readblock(buf, addr, len);
 }
 
+/* PSRAM writes go byte by byte with a handshake each; a whole tile row
+   (1600 bytes) is written in chunks with MSU-1 served in between, so that
+   the audio buffer is refilled in time also when the engine never makes the
+   MCU wait for pixels */
+#define SRT_MEM_WRITE_CHUNK 200
+static void srt_msu_service(void);
 void srt_hal_mem_write(uint32_t addr, const void *buf, uint16_t len) {
-  sram_writeblock((void *)buf, addr, len);
+  const uint8_t *p = buf;
+  while(len) {
+    uint16_t n = len > SRT_MEM_WRITE_CHUNK ? SRT_MEM_WRITE_CHUNK : len;
+    sram_writeblock((void *)p, addr, n);
+    p += n; addr += n; len -= n;
+    if(len) srt_msu_service();
+  }
 }
 
 /* MSU-1 (ROMs with a .msu file, core built with MSU-1): its audio buffer
