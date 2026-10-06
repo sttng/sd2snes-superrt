@@ -10,8 +10,8 @@
 // and logic of the EP4CE15, so this is a single sequential engine instead:
 // one state machine that walks exactly the same algorithm as the software
 // model in src/srt_render.c (pixel loop, ray phases, command list interpreter,
-// intersection tests, shading) with three shared pipelined 32x32 multipliers
-// and three 16x16 ones. Results are bit-identical to srt_render.c, which is
+// intersection tests, shading) with three shared 32x32 multipliers, six 16x16
+// ones and a 32x32 fast lane. Results are bit-identical to srt_render.c, which is
 // bit-identical to the original RTL. Work is skipped or cached only where the
 // result provably stays the same (see the plane reciprocal shortcut, the
 // reciprocal / plane point / 1/radius caches and isect_miss).
@@ -22,12 +22,15 @@
 // The command list is read through cmd_addr/cmd_q (synchronous RAM, the
 // address is registered by the RAM: cmd_q in cycle t+1 = mem[cmd_addr in t]).
 //
-// Multiplier latency (MUL_LAT) is 3: operands issued in cycle t are consumed
-// in cycle t+3. All waits are written relative to MUL_LAT; MUL_LAT = 4 adds a
-// pipeline stage to the multipliers (srt_mul EXTRA) if timing needs it.
+// Multiplier latency (MUL_LAT) is 2: operands issued in cycle t are consumed
+// in cycle t+2 (single register stage, like the fast lane). All waits are
+// written relative to MUL_LAT; MUL_LAT = 3 (partial products registered) and
+// 4 (plus a stage after the carry-save step) are bit-exact as well and give
+// the multipliers more time if timing needs it, at about 13 % / 26 % more
+// cycles.
 //////////////////////////////////////////////////////////////////////////////////
 module srt_engine #(
-  parameter MUL_LAT = 3
+  parameter MUL_LAT = 2                 // multiplier latency: 2 (default), 3 or 4
 )(
   input clk,
   input start,
@@ -237,16 +240,16 @@ endfunction
 // ---------------------------------------------------------------------------
 reg [31:0] ma0 = 0, mb0 = 0, ma1 = 0, mb1 = 0, ma2 = 0, mb2 = 0;
 wire [47:0] q0, q1, q2;
-srt_mul #(.EXTRA(MUL_LAT - 3)) mul0(.clk(clk), .a(ma0), .b(mb0), .p(q0));
-srt_mul #(.EXTRA(MUL_LAT - 3)) mul1(.clk(clk), .a(ma1), .b(mb1), .p(q1));
-srt_mul #(.EXTRA(MUL_LAT - 3)) mul2(.clk(clk), .a(ma2), .b(mb2), .p(q2));
+srt_mul #(.LAT(MUL_LAT)) mul0(.clk(clk), .a(ma0), .b(mb0), .p(q0));
+srt_mul #(.LAT(MUL_LAT)) mul1(.clk(clk), .a(ma1), .b(mb1), .p(q1));
+srt_mul #(.LAT(MUL_LAT)) mul2(.clk(clk), .a(ma2), .b(mb2), .p(q2));
 
 // three 16x16 lanes (plane denominators)
 reg [15:0] mc0 = 0, md0 = 0, mc1 = 0, md1 = 0, mc2 = 0, md2 = 0;
 wire [31:0] r0, r1, r2;
-srt_mul16 #(.EXTRA(MUL_LAT - 3)) mul3(.clk(clk), .a(mc0), .b(md0), .p(r0));
-srt_mul16 #(.EXTRA(MUL_LAT - 3)) mul4(.clk(clk), .a(mc1), .b(md1), .p(r1));
-srt_mul16 #(.EXTRA(MUL_LAT - 3)) mul5(.clk(clk), .a(mc2), .b(md2), .p(r2));
+srt_mul16 #(.LAT(MUL_LAT)) mul3(.clk(clk), .a(mc0), .b(md0), .p(r0));
+srt_mul16 #(.LAT(MUL_LAT)) mul4(.clk(clk), .a(mc1), .b(md1), .p(r1));
+srt_mul16 #(.LAT(MUL_LAT)) mul5(.clk(clk), .a(mc2), .b(md2), .p(r2));
 // Newton-Raphson fast lane (one value): single register stage, an operand
 // issued in cycle t is consumed in cycle t+2 (srt_mulf)
 reg [31:0] fa = 0, fb = 0;
@@ -259,9 +262,9 @@ wire [31:0] c0 = {{14{r0[31]}}, r0[31:14]}, c1 = {{14{r1[31]}}, r1[31:14]}, c2 =
 // 32x32 lanes can take the plane dot product at the same time
 reg [15:0] me0 = 0, mf0 = 0, me1 = 0, mf1 = 0, me2 = 0, mf2 = 0;
 wire [31:0] r3, r4, r5;
-srt_mul16 #(.EXTRA(MUL_LAT - 3)) mul6(.clk(clk), .a(me0), .b(mf0), .p(r3));
-srt_mul16 #(.EXTRA(MUL_LAT - 3)) mul7(.clk(clk), .a(me1), .b(mf1), .p(r4));
-srt_mul16 #(.EXTRA(MUL_LAT - 3)) mul8(.clk(clk), .a(me2), .b(mf2), .p(r5));
+srt_mul16 #(.LAT(MUL_LAT)) mul6(.clk(clk), .a(me0), .b(mf0), .p(r3));
+srt_mul16 #(.LAT(MUL_LAT)) mul7(.clk(clk), .a(me1), .b(mf1), .p(r4));
+srt_mul16 #(.LAT(MUL_LAT)) mul8(.clk(clk), .a(me2), .b(mf2), .p(r5));
 wire [31:0] c3 = {{14{r3[31]}}, r3[31:14]}, c4 = {{14{r4[31]}}, r4[31:14]}, c5 = {{14{r5[31]}}, r5[31:14]};
 
 wire [31:0] a0 = f40(q0), a1 = f40(q1), a2 = f40(q2);
@@ -409,6 +412,8 @@ always @(posedge clk) begin
   if(pxc_we) pxc[pxc_wa] <= pxc_wd;
   pxc_q <= pxc[cmd_addr];
 end
+// the plane normal as stored in the cache tag (w[19:8], w[31:20], w[43:32])
+wire [11:0] pxc_n_x = pxc_q[107:96], pxc_n_y = pxc_q[119:108], pxc_n_z = pxc_q[131:120];
 
 // Newton-Raphson unit (3 lanes)
 reg [31:0] nr_in0 = 0, nr_in1 = 0, nr_in2 = 0;
@@ -492,7 +497,8 @@ reg [31:0] exitd;
 
 localparam [1:0] W1 = MUL_LAT - 1;           // wait after a single issue
 localparam [1:0] W2 = MUL_LAT - 2;           // wait after the 2nd back-to-back issue
-localparam [1:0] W3 = MUL_LAT - 3;           // wait after the 3rd back-to-back issue
+// (no sequence issues three times back to back before consuming, so MUL_LAT = 2
+// needs no W3)
 
 // Newton-Raphson set-up from nr_in*/nr_mode (the work of state S_NR0)
 task nr_setup;
@@ -697,16 +703,21 @@ always @(posedge clk) begin
       endcase
       hn_sel <= 2'd0;
       // plane products, issued speculatively for every decoded instruction
-      // (unused otherwise): (start - point).N, N.D and (-N).D
-      ma0 <= sox - pxc_q[95:64]; mb0 <= sx16(cf2_10(cmd_q[19:8]));
-      ma1 <= soy - pxc_q[63:32]; mb1 <= sx16(cf2_10(cmd_q[31:20]));
-      ma2 <= soz - pxc_q[31:0];  mb2 <= sx16(cf2_10(cmd_q[43:32]));
-      me0 <= dx; mf0 <= cf2_10(cmd_q[19:8]);
-      me1 <= dy; mf1 <= cf2_10(cmd_q[31:20]);
-      me2 <= dz; mf2 <= cf2_10(cmd_q[43:32]);
-      mc0 <= dx; md0 <= 16'd0 - cf2_10(cmd_q[19:8]);
-      mc1 <= dy; md1 <= 16'd0 - cf2_10(cmd_q[31:20]);
-      mc2 <= dz; md2 <= 16'd0 - cf2_10(cmd_q[43:32]);
+      // (unused otherwise): (start - point).N, N.D and (-N).D. The normal is
+      // taken from the plane point cache's copy of the operand bits (its tag,
+      // pxc_q[151:96] = w[63:8]), not from cmd_q: the same value whenever the
+      // cache hits, and on a miss S_PLA issues the products again. This keeps
+      // the command RAM output (which feeds the whole decode) off the operand
+      // registers' input muxes (timing, 16th build).
+      ma0 <= sox - pxc_q[95:64]; mb0 <= sx16(cf2_10(pxc_n_x));
+      ma1 <= soy - pxc_q[63:32]; mb1 <= sx16(cf2_10(pxc_n_y));
+      ma2 <= soz - pxc_q[31:0];  mb2 <= sx16(cf2_10(pxc_n_z));
+      me0 <= dx; mf0 <= cf2_10(pxc_n_x);
+      me1 <= dy; mf1 <= cf2_10(pxc_n_y);
+      me2 <= dz; mf2 <= cf2_10(pxc_n_z);
+      mc0 <= dx; md0 <= 16'd0 - cf2_10(pxc_n_x);
+      mc1 <= dy; md1 <= 16'd0 - cf2_10(pxc_n_y);
+      mc2 <= dz; md2 <= 16'd0 - cf2_10(pxc_n_z);
       if(icount[16]) begin
         state <= S_PHEND;              // runaway command list
       end else begin
@@ -1377,7 +1388,7 @@ always @(posedge clk) begin
 
     // ---------------------------------------------------------------- Newton-Raphson, fast lane
     // Same computation as S_NR* for lane 0 only, on the single stage
-    // multiplier (2 cycles per dependent multiply instead of MUL_LAT).
+    // multiplier (2 cycles per dependent multiply, also when MUL_LAT > 2).
     // Used for every single-value reciprocal / square root; the 3 lane
     // reciprocal of the ray direction (S_PH0) uses S_NR*.
     S_NF0: begin

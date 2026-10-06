@@ -10,13 +10,22 @@ This core has the chip's SNES interface plus **one sequential engine**
 MCU maps them to the ROM palette and writes SNES tiles (`../../src/superrt*.c`).
 Derived from `sd2snes_obc1`, with MSU-1 (build option, default on) and no cheat engine.
 
-**Status:** works on hardware. 80 MHz engine clock, 13 997 LEs (91 %), engine
-Fmax 85.1 MHz, 96 MHz domain 104.9 MHz.
+**Status:** the 17th build works on hardware: multiplier latency 2 (12.6 %
+fewer cycles than the 15th), 80 MHz engine clock, 13 710 LEs (89 %), engine
+Fmax 80.8 MHz, 96 MHz domain 98.4 MHz. Needs the firmware that serves MSU-1
+after every line (otherwise the audio crackles once per frame).
+
+Engine time per frame, 15th build → 17th build:
 
 | Mode | Demo start view | 12 test views (avg.) |
 |------|-----------------|----------------------|
-| Half horizontal resolution (default) | 15.0 M cycles, 5.3 fps | 11.0 M, 7.3 fps |
-| Full resolution | 30.0 M cycles, 2.7 fps | 22.0 M, 3.6 fps |
+| Half horizontal resolution (default) | 15.0 → 13.3 M cycles, 5.3 → 6.0 fps | 11.0 → 9.6 M, 7.3 → 8.3 fps |
+| Full resolution | 30.0 → 26.5 M cycles, 2.7 → 3.0 fps | 22.0 → 19.2 M, 3.6 → 4.2 fps |
+
+On screen add about 10 ms per frame on the SNES side (command list upload). In
+half resolution the MCU's work per frame (pixel stream, palette mapping, tile
+writes) now takes about as long as the engine: the demo start view shows a new
+frame every 0.19 s (5.2 fps) on hardware, the engine alone needs 0.17 s.
 
 ## Files
 
@@ -24,7 +33,7 @@ Fmax 85.1 MHz, 96 MHz domain 104.9 MHz.
 |------|----------|
 | `superrt.v` | registers, proxied writes, 512 × 64 bit command buffer, multiplier, frame handshake, clock domain crossing, 2048 pixel FIFO |
 | `srt_engine.v` | ray tracer: pixel loop, command interpreter, sphere/plane/AABB, CSG, shading |
-| `srt_mul.v` | pipelined 32×32 / 16×16 multipliers, `srt_mulf` single-stage 32×32 fast lane |
+| `srt_mul.v` | 32×32 / 16×16 multipliers (latency 2, 3 or 4), `srt_mulf` fast lane |
 | `address.v`, `main.v`, `mcu_cmd.v` | sd2snes glue (memory map, SPI commands) |
 | `sim/` | testbenches |
 
@@ -66,9 +75,11 @@ only (dither uses x / 2) and the MCU doubles them; reference:
 * **Bit-exact** with `src/srt_render.c` (itself bit-identical to the original
   RTL): multiplier truncations, 16 bit wrap-arounds, Newton-Raphson with the
   chip's seed table.
-* **Structure:** one state machine; three 32×32 multipliers (latency 3), six
-  16×16 lanes, one 32×32 fast lane (latency 2) for Newton-Raphson chains and
-  dot × reciprocal.
+* **Structure:** one state machine; three 32×32 multipliers, six 16×16 lanes
+  and a 32×32 fast lane (Newton-Raphson chains, dot × reciprocal), all with
+  latency 2 (`MUL_LAT`; the 32×32 products are summed in the same cycle as the
+  embedded multipliers, like the fast lane). `MUL_LAT` 3 / 4 give the
+  multipliers more time, bit-exact as well, for about +13 % / +26 % cycles.
 * **Result-neutral speed-ups:** seed² from a table; plane reciprocal skipped
   where only its sign matters; reciprocal cache (256 entries) addressed straight
   from the multiplier sums; per-instruction plane point cache; 1/radius cache;
@@ -94,8 +105,9 @@ only (dither uses x / 2) and the MCU doubles them; reference:
 
 * **Engine clock:** `clk1_multiply_by` / `clk1_divide_by` in `ip/mk3/pll.v`
   and `-multiply_by` / `-divide_by` in `main.sdc` (input 8 MHz). 80 MHz =
-  10/1; fallbacks 76.8 MHz = 48/5, 72 MHz = 9/1. Last resort: `MUL_LAT 4` in
-  `srt_engine.v` (bit-exact, ~15 % more cycles).
+  10/1; fallbacks 76.8 MHz = 48/5, 72 MHz = 9/1.
+* **Multiplier latency:** `MUL_LAT` at the top of `srt_engine.v`, 2 (default).
+  If the multiplier paths fail timing: 3 (the 15th build's multipliers) or 4.
 * **MSU-1:** `VERILOG_MACRO "SRT_MSU1=1"` in `main.qsf`; remove to save ~900 LEs.
   The firmware serves MSU-1 from the SuperRT loop.
 
@@ -110,16 +122,18 @@ Fmax moves by ±3 MHz between builds at this device use.
 | 6th | — | 76.8 MHz | met, works on hardware (no MSU-1) |
 | 8th | 13 295 | 76.8 MHz | met, works on hardware (MSU-1 back) |
 | 13th | 13 933 | 76.8 MHz | 82.3 MHz, works on hardware (half resolution, fast lane) |
-| **15th** | **13 997** | **80 MHz** | **85.1 MHz, works on hardware** |
+| 15th | 13 997 | 80 MHz | 85.1 MHz, works on hardware |
+| 16th | 13 662 (89 %) | 80 MHz | multiplier latency 2 (−12.6 % cycles): 78.9 MHz, −0.17 ns, one path: command RAM → `mb0` (speculative plane product in decode) |
+| **17th** | **13 710 (89 %)** | **80 MHz** | **80.8 MHz, works on hardware** (speculative plane products take the normal from the plane point cache's tag copy, not the command RAM) |
 
-Builds 1, 3, 4, 7, 9, 11, 12 and 14 missed timing. Each was fixed by
+Builds 1, 3, 4, 7, 9, 11, 12, 14 and 16 missed timing. Each was fixed by
 restructuring the failing path (see git history).
 
 ## Simulation
 
 | Command | Checks |
 |---------|--------|
-| `sim/engine/run_tests.sh <CommandBuffer.bin> [seeds]` | engine vs `srt_render.c`: 12 cameras, random command lists, random FIFO back-pressure, half mode (Verilator) |
+| `sim/engine/run_tests.sh <CommandBuffer.bin> [seeds]` | engine vs `srt_render.c`: 12 cameras, random command lists, random FIFO back-pressure, half mode (Verilator; `MUL_LAT=3 sim/engine/build.sh` for the other latencies) |
 | `sim/run_sim.sh <SRTTest.sfc>` | whole core replaying emulator SNES/MCU traffic, 2 engine frames compared pixel by pixel (Verilator); plus MSU-1 ID and audio path; `FULLRES=1` full resolution, `SWPATH=1` software path (Icarus), `MSU=0` core without MSU-1 |
 | `sim/engine/prof/prof.sh` | cycles per engine state |
 

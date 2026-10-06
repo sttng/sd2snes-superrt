@@ -1,6 +1,6 @@
 // Wrapper for the engine testbench: engine + command buffer RAM (same read timing as superrt.v)
 `timescale 1ns / 1ps
-module tb_engine_top #(parameter MUL_LAT = 3)(
+module tb_engine_top #(parameter MUL_LAT = 2)(
   input clk,
   input start,
   input [31:0] i_sx, input [31:0] i_sy, input [31:0] i_sz,
