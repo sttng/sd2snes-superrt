@@ -1,15 +1,19 @@
 --- a/SRT-SNES/Source/SRTTest.s
 +++ b/SRT-SNES/Source/SRTTest.s
-@@ -735,6 +735,125 @@
+@@ -735,6 +735,109 @@
  
  	; Init done - enable screen
  	RW a8i16
 +
 +; Unmute the SNES audio: after reset the S-DSP has FLG bit 6 (MUTE) set, and
 +; its mute output silences the console's amplifier - which also carries the
-+; cartridge (MSU-1) audio. Upload an 8 byte program to the sound CPU through
-+; the IPL boot ROM:  mov $F2,#$6C / mov $F3,#$20 (FLG: unmuted, echo
-+; writes off) / bra *.   (a8, any data bank)
++; cartridge (MSU-1) audio. The other S-DSP registers start with random values
++; after power-on: a non-zero echo volume then plays the random echo buffer, a
++; click every EDL x 16 ms. So a small program is uploaded to the sound CPU
++; through the IPL boot ROM that first silences everything the S-DSP itself
++; could play (main and echo volume, echo feedback / enables / delay, noise,
++; pitch modulation, all voices keyed off), then clears MUTE (echo writes stay
++; off) and loops.   (a8 i16, any data bank)
 +:	lda f:$002140		; IPL ready ($AA)
 +	cmp #$AA
 +	bne :-
@@ -23,64 +27,44 @@
 +	sta f:$002140
 +:	cmp f:$002140
 +	bne :-
-+	lda #$8F
-+	sta f:$002141
-+	lda #$00
-+	sta f:$002140
++	ldx #$0000
++SpcInitLoop:
++	lda f:SpcInitProg,x
++	sta f:$002141		; data byte
++	txa
++	sta f:$002140		; its index (low byte), echoed back when taken
 +:	cmp f:$002140
 +	bne :-
-+	lda #$6C
-+	sta f:$002141
-+	lda #$01
-+	sta f:$002140
-+:	cmp f:$002140
-+	bne :-
-+	lda #$F2
-+	sta f:$002141
-+	lda #$02
-+	sta f:$002140
-+:	cmp f:$002140
-+	bne :-
-+	lda #$8F
-+	sta f:$002141
-+	lda #$03
-+	sta f:$002140
-+:	cmp f:$002140
-+	bne :-
-+	lda #$20
-+	sta f:$002141
-+	lda #$04
-+	sta f:$002140
-+:	cmp f:$002140
-+	bne :-
-+	lda #$F3
-+	sta f:$002141
-+	lda #$05
-+	sta f:$002140
-+:	cmp f:$002140
-+	bne :-
-+	lda #$2F
-+	sta f:$002141
-+	lda #$06
-+	sta f:$002140
-+:	cmp f:$002140
-+	bne :-
-+	lda #$FE
-+	sta f:$002141
-+	lda #$07
-+	sta f:$002140
-+:	cmp f:$002140
-+	bne :-
++	inx
++	cpx #(SpcInitProgEnd - SpcInitProg)
++	bne SpcInitLoop
 +	lda #$00
 +	sta f:$002142		; start at $0200
 +	lda #$02
 +	sta f:$002143
 +	lda #$00
 +	sta f:$002141		; zero: execute
-+	lda #$09
++	txa
++	inc a			; last index + 2
 +	sta f:$002140
 +:	cmp f:$002140
 +	bne :-
++	bra SpcInitDone
++SpcInitProg:			; mov $F2,#reg / mov $F3,#value pairs, then bra *
++	.byte $8F,$0C,$F2, $8F,$00,$F3	; MVOL L = 0
++	.byte $8F,$1C,$F2, $8F,$00,$F3	; MVOL R = 0
++	.byte $8F,$2C,$F2, $8F,$00,$F3	; EVOL L = 0
++	.byte $8F,$3C,$F2, $8F,$00,$F3	; EVOL R = 0
++	.byte $8F,$0D,$F2, $8F,$00,$F3	; EFB = 0
++	.byte $8F,$4D,$F2, $8F,$00,$F3	; EON = 0
++	.byte $8F,$7D,$F2, $8F,$00,$F3	; EDL = 0
++	.byte $8F,$3D,$F2, $8F,$00,$F3	; NON = 0
++	.byte $8F,$2D,$F2, $8F,$00,$F3	; PMON = 0
++	.byte $8F,$5C,$F2, $8F,$FF,$F3	; KOF = all voices off
++	.byte $8F,$6C,$F2, $8F,$20,$F3	; FLG: unmuted, echo writes off
++	.byte $2F,$FE			; bra *
++SpcInitProgEnd:
++SpcInitDone:
 +
 +	; MSU-1 background music: if an MSU-1 is present ("S-MSU1" at $2002),
 +	; play track 1 (<rom>-1.pcm) at full volume, repeating
