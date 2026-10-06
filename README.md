@@ -62,8 +62,10 @@ makes the MSU-1 music crackle once per frame.
   (palette mapping k-d tree + offset of a 32000 byte start-up image).
   `rom/SRTTest-sd2snes.patch` adds both to the test ROM.
 * Optional: register `$BEBA` bit 0 selects full resolution (default half).
-* For MSU-1 audio on real hardware the ROM must unmute the S-DSP (the test ROM
-  uploads a tiny SPC700 program).
+* For MSU-1 audio on real hardware the ROM must unmute the S-DSP and silence
+  it: its volume and echo registers are random after power-on, and a non-zero
+  echo volume makes the echo buffer click every EDL x 16 ms on some boots (the
+  test ROM uploads a small SPC700 program that does both).
 
 ## What's where
 
