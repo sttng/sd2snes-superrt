@@ -16,13 +16,6 @@ etc.) still use the unchanged `fpga_gsu` core.
 | MSU-1 | yes | no (no room) |
 | In-game hooks / savestates | no (on FX3 carts) | no (on FX3 carts) |
 
-
-
-
-Job	Old slow core	Mk.II half rate	Mk3 full rate
-741 (door)	651,708 cycles	484,292	362,168
-760	1,377,388	509,340	264,958
-
 ## The FX3 core (`verilog/sd2snes_gsu/gsu_fx3.v`)
 
 - **Pipelined:** fetches up to one instruction byte per clock, with zero-penalty
