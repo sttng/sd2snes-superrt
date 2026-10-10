@@ -600,8 +600,17 @@ always @(posedge CLK) if (CE) begin
     // ---------------- miss handling
     case (fs_r)
       FS_IDLE: begin
+        // A code fetch can still be pending when the run ends (STOP retires with an
+        // uncached read or a line fill of the byte behind it in flight).  The ROM/RAM
+        // bus FSMs keep serving fch_*_rd_r on their own, so drain it here: otherwise
+        // the request is re-issued for as long as the GSU sits stopped, and the next
+        // run's first miss takes one of those stale completions as its own byte
+        // (Star Fox FX3 hung this way: a run entered at $B19F executed the byte of
+        // $81BE that the previous run had left in flight).
+        if (fch_rom_rd_r & rom_fch_end) fch_rom_rd_r <= 0;
+        if (fch_ram_rd_r & ram_fch_end) fch_ram_rd_r <= 0;
         // GO raised: the byte held from the last STOP executes first
-        if (go_r & ~wb_go_clr) begin
+        if (go_r & ~wb_go_clr & ~fch_rom_rd_r & ~fch_ram_rd_r) begin
           d_v_r <= 1; d_byte_r <= alt_byte_r; d_addr_r <= r15_r - 16'd1;
           b_v_r <= 0; if_v_r <= 0; pend_v_r <= 0;
           lp_r <= r15_r - 16'd1;
@@ -724,7 +733,8 @@ always @(posedge CLK) if (CE) begin
     else if (wb_go_clr) begin
       if (d_v_r) alt_byte_r <= d_byte_r;
       d_v_r <= 0; b_v_r <= 0; if_v_r <= 0;
-      fch_rom_rd_r <= 0; fch_ram_rd_r <= 0;
+      // a pending code fetch is drained in FS_IDLE (see there), not dropped: one
+      // already on the bus would still complete and could be taken by the next run
       fs_r <= FS_IDLE;
     end
   end
