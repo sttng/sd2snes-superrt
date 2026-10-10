@@ -1,5 +1,0 @@
-program $_FW_FILE $_FW_START
-soft_reset_halt
-resume
-shutdown
-
