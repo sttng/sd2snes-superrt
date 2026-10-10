@@ -10,10 +10,18 @@ etc.) still use the unchanged `fpga_gsu` core.
 | | Mk3 (Cyclone IV) | Mk2 (Spartan-3 XC3S400) |
 |---|---|---|
 | FX3 core clock | 85.75 MHz (4x rate - full) | 42.9 MHz (2x rate, clock enable - half) |
+| Cycles test scene (FX2: 651,708) | 362,168 | 484,292 |
 | Speed vs. FX2 | ~1.8–5.2× | ~1.3–2.7× |
 | Cheat engine | yes | yes |
 | MSU-1 | yes | no (no room) |
 | In-game hooks / savestates | no (on FX3 carts) | no (on FX3 carts) |
+
+
+
+
+Job	Old slow core	Mk.II half rate	Mk3 full rate
+741 (door)	651,708 cycles	484,292	362,168
+760	1,377,388	509,340	264,958
 
 ## The FX3 core (`verilog/sd2snes_gsu/gsu_fx3.v`)
 
