@@ -75,6 +75,7 @@ void smc_id(snes_romprops_t* props, uint32_t file_offset) {
   props->has_cx4 = 0;
   props->has_obc1 = 0;
   props->has_gsu = 0;
+  props->has_fx3 = 0;
   props->has_sa1 = 0;
   props->has_sdd1 = 0;
   props->has_combo = 0;
@@ -208,7 +209,25 @@ void smc_id(snes_romprops_t* props, uint32_t file_offset) {
           header->carttype == 0x1a)) {
         props->has_gsu = 1;
         props->fpga_conf = FPGA_GSU;
-        props->fpga_dspfeat = CFG.gsu_speed;
+        /* dsp_feat bit 0 is the speed toggle; bit 1 means FX3 to the gsu3
+           core, so keep a stray config value from leaking past bit 0 */
+        props->fpga_dspfeat = CFG.gsu_speed & 1;
+        header->ramsize = header->expramsize & 0x7;
+      }
+      /* Super FX 3 (FX3) LoROM: cart type $17 (or $18 with battery-backed
+         cart RAM), may declare FastROM (map $30).  FX3 carts run on
+         fpga_gsu3, the pipelined FX3-only Super FX core (gsu_fx3.v, ~4x the
+         classic core): MMIO at $7000, a flat 4MB ROM map for the 65816, cart
+         RAM in banks $70-$71 only, no RON/RAN bus handover and no FX IRQ.
+         On the Mk.II that core has no MSU-1 audio (see memory.c). */
+      else if ((header->map & 0xef) == 0x20 &&
+          (header->carttype == 0x17 || header->carttype == 0x18)) {
+        props->has_gsu = 1;
+        props->has_fx3 = 1;
+        props->fpga_conf = FPGA_GSU3;
+        /* bit 0: fast timing (the FX3 core always runs at full speed),
+           bit 1: FX3 mode */
+        props->fpga_dspfeat = 0x01 | 0x02;
         header->ramsize = header->expramsize & 0x7;
       }
       break;
@@ -319,7 +338,8 @@ void smc_id(snes_romprops_t* props, uint32_t file_offset) {
   props->region = (header->destcode <= 1 || header->destcode >= 13) ? 0 : 1;
 
   // adjust sram size for special cart types
-  if (  (props->has_gsu && (header->carttype != 0x15 && header->carttype != 0x1a))
+  if (  (props->has_gsu && (header->carttype != 0x15 && header->carttype != 0x1a
+                            && header->carttype != 0x18))
      || (props->has_sa1 && (header->carttype == 0x34)                            )
      ) {
     // no sram in ram

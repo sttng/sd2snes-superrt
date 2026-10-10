@@ -453,11 +453,16 @@ uint32_t load_rom(uint8_t* filename, uint32_t base_addr, uint8_t flags) {
   }
 
   printf("check MSU...");
+  romprops.has_msu1 = 0;
+#ifdef CONFIG_MK2
+  /* The Mk.II FX3 core (fpga_gsu3.bit) trades the MSU-1 audio DAC for the
+     FX3 logic, so MSU-1 is not offered for FX3 carts on the Mk.II.  The check
+     must be skipped, not undone: msu1_check() opens the .msu itself. */
+  if(!romprops.has_fx3)
+#endif
   if(msu1_check(filename)) {
     romprops.fpga_features |= FEAT_MSU1;
     romprops.has_msu1 = 1;
-  } else {
-    romprops.has_msu1 = 0;
   }
   printf("done\n");
 

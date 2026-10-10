@@ -59,9 +59,12 @@ void cheat_program() {
   fpga_write_cheat(6, enable_mask);
   cheat_enable(CFG.enable_cheats);
   //cheat_nmi_enable(romprops.has_gsu ? 0 : CFG.enable_irq_hook);
-  cheat_nmi_enable(CFG.enable_ingame_hook);
+  /* No in-game hooks on FX3 carts: the 65816 code lives in the FX3's linear
+     ROM map and the game holds forced blank while it waits for the FX, so a
+     hooked frame drops to black. */
+  cheat_nmi_enable(romprops.has_fx3 ? 0 : CFG.enable_ingame_hook);
   //cheat_irq_enable(romprops.has_gsu ? 0 : CFG.enable_irq_hook);
-  cheat_irq_enable((romprops.has_gsu && !strncmp((char *)romprops.header.name, "DOOM", strlen("DOOM"))) ? 0 : CFG.enable_ingame_hook);
+  cheat_irq_enable((romprops.has_fx3 || (romprops.has_gsu && !strncmp((char *)romprops.header.name, "DOOM", strlen("DOOM")))) ? 0 : CFG.enable_ingame_hook);
   cheat_holdoff_enable(CFG.enable_hook_holdoff);
   cheat_buttons_enable(CFG.enable_ingame_buttons);
   cheat_wram_present(wram_index);

@@ -46,6 +46,9 @@ extern const uint8_t *fpga_config;
 #define FPGA_CX4 ((const uint8_t*)"/sd2snes/fpga_cx4." FPGA_CONF_EXT)
 #define FPGA_OBC1 ((const uint8_t*)"/sd2snes/fpga_obc1." FPGA_CONF_EXT)
 #define FPGA_GSU ((const uint8_t*)"/sd2snes/fpga_gsu." FPGA_CONF_EXT)
+/* FX3-only Super FX variant (pipelined gsu_fx3.v core), selected by smc.c for
+   every Super FX 3 cart on both Mk.II and Mk.III */
+#define FPGA_GSU3 ((const uint8_t*)"/sd2snes/fpga_gsu3." FPGA_CONF_EXT)
 #define FPGA_SA1 ((const uint8_t*)"/sd2snes/fpga_sa1." FPGA_CONF_EXT)
 #define FPGA_SDD1 ((const uint8_t*)"/sd2snes/fpga_sdd1." FPGA_CONF_EXT)
 #define FPGA_SGB ((const uint8_t*)"/sd2snes/fpga_sgb." FPGA_CONF_EXT)
